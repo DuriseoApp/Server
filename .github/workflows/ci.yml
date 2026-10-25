@@ -27,6 +27,20 @@ jobs:
       # Testcontainers가 러너의 Docker로 PostgreSQL을 띄운다
       - name: ./gradlew build
         run: ./gradlew build --no-daemon
+      - name: 테스트 결과 요약
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import glob, os, xml.etree.ElementTree as ET
+          t = f = e = s = 0
+          for path in glob.glob("build/test-results/test/*.xml"):
+              r = ET.parse(path).getroot()
+              t += int(r.get("tests", 0)); f += int(r.get("failures", 0)); e += int(r.get("errors", 0)); s += int(r.get("skipped", 0))
+          line = f"테스트 {t}개 실행, 실패 {f + e}개, 건너뜀 {s}개"
+          print(f"::notice title=테스트 결과::{line}")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as out:
+              out.write(f"### {line}\n")
+          PY
       - name: 테스트 리포트 올리기
         if: failure()
         uses: actions/upload-artifact@v4
