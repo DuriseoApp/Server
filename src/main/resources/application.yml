@@ -1,0 +1,71 @@
+# 공통 설정. 값은 환경변수로 넣는다 (.env.example, docs/SETUP.md). 실제 값을 이 파일에 쓰지 않는다.
+spring:
+  application:
+    name: duriseo-server
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/duriseo}
+    username: ${DB_USERNAME:duriseo}
+    password: ${DB_PASSWORD:}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate # 스키마는 Flyway 마이그레이션으로만 바꾼다 (ERD 1장)
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    locations: classpath:db/migration
+  jackson:
+    time-zone: UTC
+  servlet:
+    multipart:
+      max-file-size: 10MB # 프로필 사진 원본 최대 10MB (NFR-FILE-01)
+      max-request-size: 11MB
+
+server:
+  shutdown: graceful
+
+logging:
+  pattern:
+    level: "%5p [%X{traceId:-}]" # 로그에 traceId를 붙인다 (API.md 1.1)
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+duriseo:
+  google:
+    web-client-id: ${GOOGLE_WEB_CLIENT_ID:}
+  kakao:
+    app-id: ${KAKAO_APP_ID:}
+    admin-key: ${KAKAO_ADMIN_KEY:}
+  firebase:
+    project-id: ${FIREBASE_PROJECT_ID:}
+    credentials-base64: ${FIREBASE_CREDENTIALS_BASE64:}
+
+---
+# 개발 환경 (AWS 서버의 dev 컨테이너)
+spring:
+  config:
+    activate:
+      on-profile: dev
+logging:
+  level:
+    com.duriseo.server: DEBUG
+
+---
+# 운영 환경 (AWS 서버의 prod 컨테이너)
+spring:
+  config:
+    activate:
+      on-profile: prod
+logging:
+  level:
+    com.duriseo.server: INFO

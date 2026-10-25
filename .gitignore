@@ -121,3 +121,8 @@ $RECYCLE.BIN/
 # Windows shortcuts
 *.lnk
 
+
+### 환경변수 (비밀값) ###
+.env
+.env.*
+!.env.example
