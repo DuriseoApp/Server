@@ -4,8 +4,8 @@
 
 | 단위 | 범위 | 기준 | 상태 |
 | --- | --- | --- | --- |
-| 키트 1 | 뼈대: 패키지, 응답 형식 1.1, 오류 처리, traceId, 설정, CI, 에이전트 지침 | API.md 1장, 5장 | 진행 중 |
-| 키트 2 | DB: ERD 15개 테이블 Flyway V1, 마이그레이션 테스트 | ERD 3장 | 대기 |
+| 키트 1 | 뼈대: 패키지, 응답 형식 1.1, 오류 처리, traceId, 설정, CI, 에이전트 지침 | API.md 1장, 5장 | 완료 |
+| 키트 2 | DB: ERD 15개 테이블 Flyway V1, 마이그레이션 테스트 | ERD 3장 | PR 완료 |
 | 키트 3 | 인프라: AWS 서버 1대용 Docker Compose(dev 앱, prod 앱, PostgreSQL), DB 백업(S3), GitHub Actions 배포. Docs ERD Q-D2 표현 수정 요청 | ERD 7장, Docs `config` | 대기 |
 | 1 | 계정: 게스트 시작, 소셜 로그인(Google·카카오 검증), 게스트 연동·기존 계정 로그인, refresh(`sid`, 한 기기), 로그아웃, 탈퇴, 내 정보·프로필, `SpaceAccessPolicy`와 R- 규칙 테스트 | FR-AUTH, API 3.1·4.1~4.3·4.6~4.7, R-01·R-09·R-11·R-14·R-17 | 대기 |
 | 2 | 커플: 초대코드, 연결(행 잠금, SYNC `LINKED`), 기록 가져오기, 해제·복구, 처음 만난 날, 사람 색 | FR-COUPLE, FR-CAL-04, API 3.2·4.4·4.5 | 대기 |

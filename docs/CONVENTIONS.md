@@ -26,6 +26,8 @@
 - 파일: `src/main/resources/db/migration/V{n}__{설명}.sql` (ERD 1장). 설명은 영어 snake_case.
 - 한 PR에 한 버전. 머지된 파일은 고치지 않는다.
 - ERD의 "제약" 열은 그대로 DDL로, "서비스" 규칙은 코드로.
+- 제약·인덱스에는 이름을 붙인다: UNIQUE `uq_{테이블}_{내용}`, CHECK `ck_{테이블}_{내용}`, 인덱스 `ix_{테이블}_{내용}`. 서비스가 제약 위반을 오류 코드로 바꿀 때 이 이름으로 구분하므로 이름을 바꾸지 않는다 (예: `uq_social_accounts_provider_user` 위반 → 연동 거부, `uq_space_members_active_user` 위반 → 이미 연결됨).
+- 새 제약은 `SchemaMigrationTest`에 위반 사례를 하나 추가한다.
 
 ## 커밋과 PR
 
