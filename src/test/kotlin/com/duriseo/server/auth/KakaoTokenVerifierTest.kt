@@ -205,11 +205,14 @@ class KakaoTokenVerifierTest {
 
 	@Test
 	fun `FR-AUTH-06 AC3 Kakao 연결 끊기가 4xx 5xx 시간 초과면 호출한 쪽이 알 수 있게 예외를 던진다`() {
+		// MockRestServiceServer는 요청이 한 번 나간 뒤에는 기대를 더할 수 없어 경우마다 reset 한다
 		server.expect(requestTo("https://kapi.kakao.com/v1/user/unlink")).andRespond(withStatus(HttpStatus.BAD_REQUEST))
 		assertFailsWith<KakaoRejectedException> { client.unlink("777") }
+		server.reset()
 
 		server.expect(requestTo("https://kapi.kakao.com/v1/user/unlink")).andRespond(withServerError())
 		assertFailsWith<KakaoUnavailableException> { client.unlink("777") }
+		server.reset()
 
 		server.expect(requestTo("https://kapi.kakao.com/v1/user/unlink")).andRespond(timeout)
 		assertFailsWith<KakaoUnavailableException> { client.unlink("777") }

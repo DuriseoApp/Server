@@ -232,11 +232,12 @@ abstract class IntegrationTestSupport {
 	/** [left]이면 이미 떠난 소속(`left_at` 있음)으로 넣는다 */
 	protected fun insertMember(spaceId: UUID, userId: UUID, color: String = "pick-orange", left: Boolean = false): UUID {
 		val id = UUID.randomUUID()
+		// left_at을 같은 insert에서 넣는다. 활성 소속을 먼저 만들면 이미 활성 공간이 있는 사용자에게서
+		// 부분 UNIQUE(uq_space_members_active_user)에 걸린다
 		jdbc.update(
-			"insert into space_members (id, space_id, user_id, color, joined_at) values (?, ?, ?, ?, ?)",
-			id, spaceId, userId, color, ts(clock.instant()),
+			"insert into space_members (id, space_id, user_id, color, joined_at, left_at) values (?, ?, ?, ?, ?, ?)",
+			id, spaceId, userId, color, ts(clock.instant()), if (left) ts(clock.instant()) else null,
 		)
-		if (left) jdbc.update("update space_members set left_at = ? where id = ?", ts(clock.instant()), id)
 		return id
 	}
 
