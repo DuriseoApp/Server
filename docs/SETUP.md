@@ -49,13 +49,16 @@
 3. CloudFormation › 스택 생성 › 새 리소스 사용(표준) › 템플릿 파일 업로드 › 받은 파일 선택 › 다음.
 4. 스택 이름 `duriseo`, 파라미터를 채워요.
 
-   | 파라미터 | 값 |
+   | 파라미터 (콘솔 표시) | 값 |
    | --- | --- |
-   | 서버 크기 | `t4g.small` (그대로) |
-   | 운영 API 도메인 | 3.1의 운영 이름 + `.duckdns.org` |
-   | 개발 API 도메인 | 3.1의 개발 이름 + `.duckdns.org` |
-   | 인증서 알림 메일, Google 웹 클라이언트 ID, 카카오 앱 ID, Firebase 프로젝트 ID | claude.ai 프로젝트 `config/environment.md` |
+   | Server size | `t4g.small` (그대로) |
+   | OS image | 그대로 |
+   | Prod API domain | 3.1의 운영 이름 + `.duckdns.org` |
+   | Dev API domain | 3.1의 개발 이름 + `.duckdns.org` |
+   | Certificate notice email, Google web client ID, Kakao app ID, Firebase project ID | claude.ai 프로젝트 `config/environment.md` |
    | 나머지 | 그대로 |
+
+   템플릿 글자는 영어로만 써요. 한국어를 쓰면 콘솔에 `???`로 보여요.
 
 5. 다음 › 다음 › 맨 아래 "AWS CloudFormation에서 IAM 리소스를 생성할 수 있음을 승인합니다"에 체크 › 제출.
 6. 5~10분 뒤 상태가 `CREATE_COMPLETE`가 되면 **출력** 탭을 열어요.
