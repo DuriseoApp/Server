@@ -1,7 +1,7 @@
 # 단위 1: 계정 (auth)
 
 > 브랜치: `feat/1-auth` · PR: (링크) · 상태: 리뷰 중 (구현 1부·2부 완료)
-> 기준: PRD v0.6, API.md 1장·2장(R-01·R-09·R-11·R-14·R-17)·3.1·4.1~4.3·4.6~4.7·5장, ERD 3.1·3.2·4.1·4.3·4.5·4.6·5장
+> 기준: PRD v0.7, API.md 1장·2장(R-01·R-09·R-11·R-14·R-17)·3.1·4.1~4.3·4.6~4.7·5장, ERD 3.1·3.2·4.1·4.3·4.5·4.6·5장
 > Docs 기준 커밋: DuriseoApp/Docs main `e7a31ad` (2026-10-26)
 
 ## 범위
@@ -314,6 +314,7 @@ AC 하나에 테스트 하나 이상 (CONVENTIONS). "앱 동작"은 서버 API�
 
 | 회차 | Critical | Major | 비고 |
 | --- | --- | --- | --- |
+| 1 | 0 | 1 | Minor 6. Major: 잠근 뒤 R-14 재확인을 직접 비교하던 것을 `SpaceAccessPolicy.requireGuest`로 바꿈(`SocialAuthService` switch, `UserService.promoteGuestToMember`). Minor: 닉네임을 10 코드 포인트로 자른 뒤 다시 `trim()`(+테스트), `DuriseoProperties`의 `Kakao.adminKey`·`Firebase.credentialsBase64` 마스킹, 진행 기록 머리 PRD v0.7, 테스트 이름에 ID 추가, 남은 일 보강 |
 
 ## 남은 일
 
@@ -321,5 +322,7 @@ AC 하나에 테스트 하나 이상 (CONVENTIONS). "앱 동작"은 서버 API�
 - 사용자: 단위 1을 dev에 배포하기 전에 Parameter Store `/duriseo/secret/KAKAO_ADMIN_KEY` 등록 (SETUP 3.5)
 - 사용자: Kakao Developers 동의항목 "닉네임" 켜기 (API.md 4.2, 꺼져 있으면 Kakao 가입 닉네임이 모두 "사용자"가 된다)
 - 단위 2: `WithdrawalService.unlinkCoupleBeforeWithdrawal` 채우기 (위 "결정")
+- 단위 2·3·5·6: `WithdrawalDataEraser`의 네이티브 SQL(notifications, memo_favorites, event_reminders, invite_codes)을 각 도메인 서비스로 옮기기
+- auth·user 패키지 상호 참조(`LoginService`→`UserService`, `WithdrawalService`→`SessionService`) 정리 검토
 - 단위 6: 게스트 정리 작업이 `WithdrawalService.eraseInTransaction`을 부르고, `UserWithdrawn`을 듣는 푸시·SYNC. 단위 7: `UserWithdrawn.profileImageKey`로 파일 삭제
 - Android 단위 2에 알릴 것: 토큰 응답·refresh 요청 형식(확인 필요 1·2), Google 로그인 때 profile 범위 요청(확인 필요 7), `SESSION_REPLACED`/`SESSION_INVALID` 처리

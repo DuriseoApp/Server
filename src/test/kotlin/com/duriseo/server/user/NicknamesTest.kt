@@ -25,4 +25,10 @@ class NicknamesTest {
 		assertEquals("사용자", Nicknames.fromSocialName(""))
 		assertEquals("사용자", Nicknames.fromSocialName("   \t "))
 	}
+
+	@Test
+	fun `FR-AUTH-07 AC1 10개로 자른 끝이 공백이면 그 공백도 지운다 (순수 함수)`() {
+		// 10번째 코드 포인트가 공백이다
+		assertEquals("가나다라마바사아자", Nicknames.fromSocialName("가나다라마바사아자 차카타"))
+	}
 }

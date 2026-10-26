@@ -1,5 +1,6 @@
 package com.duriseo.server.user.application
 
+import com.duriseo.server.common.access.SpaceAccessPolicy
 import com.duriseo.server.common.api.ApiException
 import com.duriseo.server.common.api.ErrorCode
 import com.duriseo.server.common.time.nowInSeconds
@@ -23,6 +24,7 @@ class UserService(
 	private val users: UserRepository,
 	private val notificationSettings: NotificationSettingsRepository,
 	private val spaceService: SpaceService,
+	private val policy: SpaceAccessPolicy,
 	private val events: ApplicationEventPublisher,
 	private val clock: Clock,
 ) {
@@ -63,8 +65,8 @@ class UserService(
 	@Transactional(propagation = Propagation.MANDATORY)
 	fun promoteGuestToMember(userId: UUID, socialName: String?) {
 		val user = lockForUpdate(userId)
-		if (user.deletedAt != null) throw ApiException(ErrorCode.SESSION_INVALID, "user not found")
-		if (user.accountType != AccountType.GUEST) throw ApiException(ErrorCode.GUEST_ONLY, "guests only")
+		// 잠근 뒤 R-14를 정책에서 다시 확인한다 (탈퇴했으면 SESSION_INVALID, 그 사이 회원이 됐으면 GUEST_ONLY)
+		policy.requireGuest(userId)
 		user.accountType = AccountType.MEMBER
 		if (user.nickname == Nicknames.GUEST_DEFAULT) user.nickname = Nicknames.fromSocialName(socialName)
 		user.updatedAt = clock.nowInSeconds()

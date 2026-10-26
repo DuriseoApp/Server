@@ -238,7 +238,7 @@ class SpaceAccessPolicyTest : IntegrationTestSupport() {
 	}
 
 	@Test
-	fun `계정 종류를 읽을 사용자가 없거나 탈퇴했으면 SESSION_INVALID`() {
+	fun `R-14 R-17 계정 종류를 읽을 사용자가 없거나 탈퇴했으면 SESSION_INVALID`() {
 		assertApiError(ErrorCode.SESSION_INVALID) { policy.requireGuest(UUID.randomUUID()) }
 		assertApiError(ErrorCode.SESSION_INVALID) { policy.requireMember(insertUser("MEMBER", deleted = true)) }
 	}

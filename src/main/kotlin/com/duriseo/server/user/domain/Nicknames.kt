@@ -23,7 +23,8 @@ object Nicknames {
 	fun fromSocialName(socialName: String?): String {
 		val trimmed = socialName?.trim().orEmpty()
 		if (trimmed.isEmpty()) return FALLBACK
-		return takeCodePoints(trimmed, MAX_CODE_POINTS)
+		// 10번째 코드 포인트가 공백이면 끝에 공백이 남으므로 자른 뒤 다시 지운다
+		return takeCodePoints(trimmed, MAX_CODE_POINTS).trim()
 	}
 
 	/** 앞 [count] 코드 포인트만 남긴다. 이모지 같은 보충 문자를 반으로 자르지 않는다 */

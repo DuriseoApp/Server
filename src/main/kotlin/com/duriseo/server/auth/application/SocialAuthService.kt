@@ -104,9 +104,8 @@ class SocialAuthService(
 				if (target.deletedAt != null || target.accountType != AccountType.MEMBER) throw notRegistered()
 
 				// 잠근 뒤 한 번 더 확인한다: 그 사이 게스트가 연동했거나 탈퇴했으면 지우면 안 된다
-				val guest = userService.lockForUpdate(requester.userId)
-				if (guest.deletedAt != null) throw ApiException(ErrorCode.SESSION_INVALID, "user not found")
-				if (guest.accountType != AccountType.GUEST) throw ApiException(ErrorCode.GUEST_ONLY, "guests only")
+				userService.lockForUpdate(requester.userId)
+				policy.requireGuest(requester.userId)
 
 				withdrawalService.eraseInTransaction(requester.userId)
 				loginService.login(target, isNewUser = false)

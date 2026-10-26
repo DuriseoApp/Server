@@ -25,8 +25,12 @@ data class DuriseoProperties(
 	data class Google(val webClientId: String = "")
 
 	/** 토큰의 app_id가 appId인지 확인한다. adminKey는 탈퇴 시 연결 끊기에 쓴다 (FR-AUTH-06 AC3) */
-	data class Kakao(val appId: String = "", val adminKey: String = "")
+	data class Kakao(val appId: String = "", val adminKey: String = "") {
+		override fun toString(): String = "Kakao(appId=$appId, adminKey=***)"
+	}
 
 	/** FCM 발송. credentialsBase64는 서비스 계정 키 JSON을 base64로 인코딩한 값 */
-	data class Firebase(val projectId: String = "", val credentialsBase64: String = "")
+	data class Firebase(val projectId: String = "", val credentialsBase64: String = "") {
+		override fun toString(): String = "Firebase(projectId=$projectId, credentialsBase64=***)"
+	}
 }
