@@ -1,0 +1,205 @@
+name: 배포
+
+# 개발(dev): main에 머지되어 CI가 통과하면 자동 배포
+# 운영(prod): Actions 탭 › 배포 › Run workflow 에서 환경 prod를 골라 수동 실행.
+#             production 환경 보호 규칙(승인자)이 있으면 승인 후 진행한다
+# 이미지는 커밋 SHA 태그로 한 번만 만들고, dev와 prod가 같은 이미지를 쓴다.
+# AWS 설정 전(AWS_DEPLOY_ROLE_ARN 없음)에는 배포를 건너뛴다. 설정 방법은 docs/SETUP.md 3장.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 배포할 환경
+        type: choice
+        options: [prod, dev]
+        default: prod
+      sha:
+        description: 배포할 커밋 SHA (비우면 main 최신). main에 머지된 커밋만 가능
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: ap-northeast-2
+
+jobs:
+  image:
+    name: 이미지 준비
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    outputs:
+      enabled: ${{ steps.check.outputs.enabled }}
+      env: ${{ steps.target.outputs.env }}
+      sha: ${{ steps.target.outputs.sha }}
+      image: ${{ steps.image.outputs.image }}
+    steps:
+      - name: AWS 설정 확인
+        id: check
+        env:
+          ROLE: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+        run: |
+          if [ -z "$ROLE" ]; then
+            echo "::notice title=배포 건너뜀::AWS_DEPLOY_ROLE_ARN Secret이 없어 배포하지 않았어요 (docs/SETUP.md 3장)"
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v5
+        if: steps.check.outputs.enabled == 'true'
+        with:
+          fetch-depth: 0
+
+      - name: 배포 대상 정하기
+        id: target
+        if: steps.check.outputs.enabled == 'true'
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT_ENV: ${{ inputs.environment }}
+          INPUT_SHA: ${{ inputs.sha }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          if [ "$EVENT" = workflow_dispatch ]; then
+            target_env="$INPUT_ENV"
+            sha="${INPUT_SHA:-$(git rev-parse origin/main)}"
+          else
+            target_env=dev
+            sha="$RUN_SHA"
+          fi
+          sha="$(git rev-parse --verify "$sha^{commit}")"
+          # main에 들어간 커밋만 배포한다
+          git merge-base --is-ancestor "$sha" origin/main || { echo "::error::$sha 는 main에 없는 커밋이에요"; exit 1; }
+          echo "env=$target_env" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "### 배포 대상: $target_env / \`${sha:0:7}\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: aws-actions/configure-aws-credentials@v5
+        if: steps.check.outputs.enabled == 'true'
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: 이미지가 이미 있는지 확인
+        id: image
+        if: steps.check.outputs.enabled == 'true'
+        env:
+          SHA: ${{ steps.target.outputs.sha }}
+        run: |
+          repo_uri="$(aws ssm get-parameter --name /duriseo/config/ECR_REPOSITORY_URI --query Parameter.Value --output text)"
+          echo "image=$repo_uri:$SHA" >> "$GITHUB_OUTPUT"
+          if aws ecr describe-images --repository-name "${repo_uri#*/}" --image-ids imageTag="$SHA" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "이미지가 이미 있어 다시 만들지 않아요"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 커밋 체크아웃
+        if: steps.check.outputs.enabled == 'true' && steps.image.outputs.exists == 'false'
+        run: git checkout --detach "${{ steps.target.outputs.sha }}"
+
+      - uses: actions/setup-java@v5
+        if: steps.check.outputs.enabled == 'true' && steps.image.outputs.exists == 'false'
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@v5
+        if: steps.check.outputs.enabled == 'true' && steps.image.outputs.exists == 'false'
+
+      # 테스트는 CI에서 이미 통과했다
+      - name: jar 만들기
+        if: steps.check.outputs.enabled == 'true' && steps.image.outputs.exists == 'false'
+        run: ./gradlew bootJar --no-daemon
+
+      - name: 이미지 만들고 올리기
+        if: steps.check.outputs.enabled == 'true' && steps.image.outputs.exists == 'false'
+        env:
+          IMAGE: ${{ steps.image.outputs.image }}
+          SHA: ${{ steps.target.outputs.sha }}
+        run: |
+          aws ecr get-login-password | docker login --username AWS --password-stdin "${IMAGE%%/*}"
+          docker build --label "org.opencontainers.image.revision=$SHA" --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" -t "$IMAGE" .
+          docker push "$IMAGE"
+
+  deploy:
+    name: 서버에 배포
+    needs: image
+    if: needs.image.outputs.enabled == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment:
+      name: ${{ needs.image.outputs.env == 'prod' && 'production' || 'development' }}
+    concurrency:
+      group: deploy-${{ needs.image.outputs.env }}
+      cancel-in-progress: false
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: 서버에서 배포 스크립트 실행 (SSM)
+        env:
+          TARGET_ENV: ${{ needs.image.outputs.env }}
+          SHA: ${{ needs.image.outputs.sha }}
+          IMAGE: ${{ needs.image.outputs.image }}
+          REPO: ${{ github.repository }}
+        run: |
+          instance_id="$(aws ssm get-parameter --name /duriseo/config/INSTANCE_ID --query Parameter.Value --output text)"
+
+          # 서버가 실행할 스크립트: 이 커밋의 deploy/ 폴더를 받아 bin/deploy.sh 실행
+          script=$(cat <<EOF
+          set -eu
+          release=/opt/duriseo/releases/$SHA
+          if [ ! -d "\$release" ]; then
+            tmp=\$(mktemp -d)
+            curl -fsSL "https://codeload.github.com/$REPO/tar.gz/$SHA" | tar -xz -C "\$tmp" --strip-components=1 --wildcards '*/deploy/*'
+            mv "\$tmp/deploy" "\$release"
+            rmdir "\$tmp"
+          fi
+          bash "\$release/bin/deploy.sh" "$TARGET_ENV" "$IMAGE"
+          EOF
+          )
+          params="$(jq -n --arg s "$script" '{commands: ($s | split("\n")), executionTimeout: ["900"]}')"
+
+          command_id="$(aws ssm send-command \
+            --instance-ids "$instance_id" \
+            --document-name AWS-RunShellScript \
+            --comment "duriseo deploy $TARGET_ENV ${SHA:0:7}" \
+            --parameters "$params" \
+            --timeout-seconds 600 \
+            --query Command.CommandId --output text)"
+          echo "SSM 명령 $command_id"
+
+          status=Pending
+          for _ in $(seq 1 180); do
+            sleep 5
+            status="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$instance_id" --query Status --output text 2>/dev/null || echo Pending)"
+            case "$status" in Pending|InProgress|Delayed) continue ;; *) break ;; esac
+          done
+
+          aws ssm get-command-invocation --command-id "$command_id" --instance-id "$instance_id" \
+            --query StandardOutputContent --output text
+          echo "----- stderr -----"
+          aws ssm get-command-invocation --command-id "$command_id" --instance-id "$instance_id" \
+            --query StandardErrorContent --output text
+
+          if [ "$status" != Success ]; then
+            echo "::error title=배포 실패::$TARGET_ENV 배포 상태 $status (위 로그 참고)"
+            exit 1
+          fi
+          echo "### $TARGET_ENV 배포 완료: \`${SHA:0:7}\`" >> "$GITHUB_STEP_SUMMARY"

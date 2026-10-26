@@ -1,0 +1,400 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  둘이서 서버 인프라 (서울 리전). EC2 1대(Docker Compose로 개발 앱, 운영 앱, PostgreSQL, Caddy),
+  고정 IP, 운영 DB 백업 버킷, 이미지 저장소(ECR), GitHub Actions 배포 역할(OIDC), 설정값(Parameter Store).
+  설치 방법은 레포의 docs/SETUP.md 3장.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label: { default: "서버" }
+        Parameters: [InstanceType, LatestAmiId]
+      - Label: { default: "도메인 (DuckDNS 등)" }
+        Parameters: [DomainProd, DomainDev, AcmeEmail]
+      - Label: { default: "앱 설정값 (claude.ai 프로젝트 config/environment.md)" }
+        Parameters: [GoogleWebClientId, KakaoAppId, FirebaseProjectId]
+      - Label: { default: "GitHub 배포" }
+        Parameters: [GitHubRepository, CreateGitHubOidcProvider]
+    ParameterLabels:
+      InstanceType: { default: "서버 크기" }
+      LatestAmiId: { default: "OS 이미지 (바꾸지 않음)" }
+      DomainProd: { default: "운영 API 도메인" }
+      DomainDev: { default: "개발 API 도메인" }
+      AcmeEmail: { default: "인증서 알림 메일" }
+      GoogleWebClientId: { default: "Google 웹 클라이언트 ID" }
+      KakaoAppId: { default: "카카오 앱 ID" }
+      FirebaseProjectId: { default: "Firebase 프로젝트 ID" }
+      GitHubRepository: { default: "서버 레포 (owner/repo)" }
+      CreateGitHubOidcProvider: { default: "GitHub OIDC 공급자 만들기" }
+
+Parameters:
+  InstanceType:
+    Type: String
+    Default: t4g.small
+    AllowedValues: [t4g.micro, t4g.small, t4g.medium]
+    Description: ARM(Graviton) 서버. t4g.small = 2GB 메모리
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64
+    Description: Amazon Linux 2023 ARM64 최신 이미지
+  DomainProd:
+    Type: String
+    AllowedPattern: "^[a-z0-9-]+(\\.[a-z0-9-]+)+$"
+    Description: "예: duriseo-api.duckdns.org"
+  DomainDev:
+    Type: String
+    AllowedPattern: "^[a-z0-9-]+(\\.[a-z0-9-]+)+$"
+    Description: "예: duriseo-dev-api.duckdns.org"
+  AcmeEmail:
+    Type: String
+    AllowedPattern: "^[^@\\s]+@[^@\\s]+$"
+    Description: Let's Encrypt 인증서 만료 알림을 받을 메일
+  GoogleWebClientId:
+    Type: String
+    MinLength: 1
+  KakaoAppId:
+    Type: String
+    AllowedPattern: "^[0-9]+$"
+  FirebaseProjectId:
+    Type: String
+    MinLength: 1
+  GitHubRepository:
+    Type: String
+    Default: DuriseoApp/Server
+  CreateGitHubOidcProvider:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: 이 AWS 계정에 GitHub OIDC 공급자가 이미 있으면 false
+
+Conditions:
+  CreateOidc: !Equals [!Ref CreateGitHubOidcProvider, "true"]
+
+Resources:
+  # ───────── 저장소 ─────────
+
+  BackupBucket:
+    Type: AWS::S3::Bucket
+    # 스택을 지워도 백업은 남긴다
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-after-30-days
+            Status: Enabled
+            ExpirationInDays: 30
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 1
+      Tags:
+        - { Key: Project, Value: duriseo }
+
+  BackupBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref BackupBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !GetAtt BackupBucket.Arn
+              - !Sub "${BackupBucket.Arn}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
+  ImageRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: duriseo-server
+      ImageTagMutability: IMMUTABLE
+      EmptyOnDelete: true
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "keep the latest 20 images",
+                "selection": { "tagStatus": "any", "countType": "imageCountMoreThan", "countNumber": 20 },
+                "action": { "type": "expire" }
+              }
+            ]
+          }
+      Tags:
+        - { Key: Project, Value: duriseo }
+
+  # ───────── 서버 ─────────
+
+  ServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: duriseo server - HTTP/HTTPS only (no SSH, use SSM Session Manager)
+      SecurityGroupIngress:
+        - { IpProtocol: tcp, FromPort: 80, ToPort: 80, CidrIp: 0.0.0.0/0, Description: "HTTP (certificate issue, redirect)" }
+        - { IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0, Description: HTTPS }
+        - { IpProtocol: udp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0, Description: HTTP/3 }
+      Tags:
+        - { Key: Name, Value: duriseo-server }
+        - { Key: Project, Value: duriseo }
+
+  ServerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: duriseo server (EC2)
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ec2.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        # SSM 에이전트: 배포 명령 실행, 콘솔 Session Manager 접속
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore"
+      Policies:
+        - PolicyName: duriseo-server
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ReadSettings
+                Effect: Allow
+                Action: ssm:GetParameter
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/duriseo/config/*"
+                  - !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/duriseo/secret/*"
+              - Sid: EcrLogin
+                Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: "*"
+              - Sid: PullImages
+                Effect: Allow
+                Action:
+                  - ecr:BatchGetImage
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchCheckLayerAvailability
+                Resource: !GetAtt ImageRepository.Arn
+              - Sid: Backups
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                Resource: !Sub "${BackupBucket.Arn}/*"
+              - Sid: ListBackups
+                Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt BackupBucket.Arn
+      Tags:
+        - { Key: Project, Value: duriseo }
+
+  ServerInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles: [!Ref ServerRole]
+
+  Server:
+    Type: AWS::EC2::Instance
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT15M
+    Properties:
+      ImageId: !Ref LatestAmiId
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref ServerInstanceProfile
+      SecurityGroupIds: [!GetAtt ServerSecurityGroup.GroupId]
+      # 콘솔에서 실수로 종료하지 않게 한다. 서버를 지우려면 먼저 종료 방지를 끈다 (docs/DEPLOY.md)
+      DisableApiTermination: true
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeType: gp3
+            VolumeSize: 20
+            Encrypted: true
+            DeleteOnTermination: true
+      Tags:
+        - { Key: Name, Value: duriseo-server }
+        - { Key: Project, Value: duriseo }
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          # 처음 부팅할 때 한 번 실행된다: Docker, Docker Compose, 스왑, 폴더 준비.
+          # 앱과 DB는 첫 배포(GitHub Actions)가 띄운다.
+          set -euxo pipefail
+
+          dnf install -y aws-cfn-bootstrap
+          signal() { /opt/aws/bin/cfn-signal -e "$1" --stack "${AWS::StackName}" --resource Server --region "${AWS::Region}" || true; }
+          trap 'signal 1' ERR
+
+          dnf install -y docker
+          mkdir -p /etc/docker
+          cat > /etc/docker/daemon.json <<'JSON'
+          { "log-driver": "json-file", "log-opts": { "max-size": "10m", "max-file": "5" } }
+          JSON
+          systemctl enable --now docker
+
+          COMPOSE_VERSION=v5.5.1
+          COMPOSE_SHA256=732e3a84c1a0f67256ce80bc2598a24546b10ca05f9faa97efceb1171ece2ef7
+          mkdir -p /usr/local/lib/docker/cli-plugins
+          curl -fsSL -o /tmp/docker-compose "https://github.com/docker/compose/releases/download/$COMPOSE_VERSION/docker-compose-linux-aarch64"
+          echo "$COMPOSE_SHA256  /tmp/docker-compose" | sha256sum -c -
+          install -m 755 /tmp/docker-compose /usr/local/lib/docker/cli-plugins/docker-compose
+          docker compose version
+
+          # 메모리 2GB에 자바 앱 2개와 DB가 있으므로 스왑 2GB
+          if [ ! -f /swapfile ]; then
+            fallocate -l 2G /swapfile
+            chmod 600 /swapfile
+            mkswap /swapfile
+            swapon /swapfile
+            echo '/swapfile none swap sw 0 0' >> /etc/fstab
+          fi
+          sysctl -w vm.swappiness=10
+          echo 'vm.swappiness=10' > /etc/sysctl.d/90-duriseo.conf
+
+          install -d -m 755 /opt/duriseo /opt/duriseo/releases
+          install -d -m 700 /opt/duriseo/state
+
+          signal 0
+
+  ServerIp:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      InstanceId: !Ref Server
+      Tags:
+        - { Key: Name, Value: duriseo-server }
+        - { Key: Project, Value: duriseo }
+
+  # ───────── GitHub Actions 배포 ─────────
+
+  GitHubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: CreateOidc
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList: [sts.amazonaws.com]
+
+  DeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: GitHub Actions deploy for duriseo server (main branch and deploy environments only)
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !If
+                - CreateOidc
+                - !Ref GitHubOidcProvider
+                - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com"
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                # PR에서는 이 역할을 쓸 수 없다. main 브랜치와 배포 환경에서만
+                token.actions.githubusercontent.com:sub:
+                  - !Sub "repo:${GitHubRepository}:ref:refs/heads/main"
+                  - !Sub "repo:${GitHubRepository}:environment:development"
+                  - !Sub "repo:${GitHubRepository}:environment:production"
+      Policies:
+        - PolicyName: duriseo-deploy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ReadSettings
+                Effect: Allow
+                Action: ssm:GetParameter
+                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/duriseo/config/*"
+              - Sid: EcrLogin
+                Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: "*"
+              - Sid: PushImages
+                Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:BatchGetImage
+                  - ecr:CompleteLayerUpload
+                  - ecr:DescribeImages
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:InitiateLayerUpload
+                  - ecr:PutImage
+                  - ecr:UploadLayerPart
+                Resource: !GetAtt ImageRepository.Arn
+              - Sid: RunDeployOnServer
+                Effect: Allow
+                Action: ssm:SendCommand
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/${Server}"
+                  - !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}::document/AWS-RunShellScript"
+              - Sid: ReadDeployResult
+                Effect: Allow
+                Action:
+                  - ssm:GetCommandInvocation
+                  - ssm:ListCommandInvocations
+                Resource: "*"
+      Tags:
+        - { Key: Project, Value: duriseo }
+
+  # ───────── 설정값 (Parameter Store) ─────────
+  # 비밀값(/duriseo/secret/*)은 템플릿에 넣지 않고 콘솔에서 SecureString으로 직접 만든다 (docs/SETUP.md)
+
+  ParamDomainProd:
+    Type: AWS::SSM::Parameter
+    Properties: { Name: /duriseo/config/DOMAIN_PROD, Type: String, Value: !Ref DomainProd }
+  ParamDomainDev:
+    Type: AWS::SSM::Parameter
+    Properties: { Name: /duriseo/config/DOMAIN_DEV, Type: String, Value: !Ref DomainDev }
+  ParamAcmeEmail:
+    Type: AWS::SSM::Parameter
+    Properties: { Name: /duriseo/config/ACME_EMAIL, Type: String, Value: !Ref AcmeEmail }
+  ParamGoogleWebClientId:
+    Type: AWS::SSM::Parameter
+    Properties: { Name: /duriseo/config/GOOGLE_WEB_CLIENT_ID, Type: String, Value: !Ref GoogleWebClientId }
+  ParamKakaoAppId:
+    Type: AWS::SSM::Parameter
+    Properties: { Name: /duriseo/config/KAKAO_APP_ID, Type: String, Value: !Ref KakaoAppId }
+  ParamFirebaseProjectId:
+    Type: AWS::SSM::Parameter
+    Properties: { Name: /duriseo/config/FIREBASE_PROJECT_ID, Type: String, Value: !Ref FirebaseProjectId }
+  ParamBackupBucket:
+    Type: AWS::SSM::Parameter
+    Properties: { Name: /duriseo/config/BACKUP_BUCKET, Type: String, Value: !Ref BackupBucket }
+  ParamEcrRepositoryUri:
+    Type: AWS::SSM::Parameter
+    Properties: { Name: /duriseo/config/ECR_REPOSITORY_URI, Type: String, Value: !GetAtt ImageRepository.RepositoryUri }
+  ParamInstanceId:
+    Type: AWS::SSM::Parameter
+    Properties: { Name: /duriseo/config/INSTANCE_ID, Type: String, Value: !Ref Server }
+
+Outputs:
+  ServerPublicIp:
+    Description: DuckDNS의 두 도메인에 이 IP를 넣는다
+    Value: !Ref ServerIp
+  DeployRoleArn:
+    Description: GitHub 레포 Secrets의 AWS_DEPLOY_ROLE_ARN에 넣는다
+    Value: !GetAtt DeployRole.Arn
+  InstanceId:
+    Description: 서버 ID (Session Manager 접속용)
+    Value: !Ref Server
+  BackupBucketName:
+    Description: 운영 DB 백업 버킷 (30일 보관)
+    Value: !Ref BackupBucket

@@ -1,0 +1,64 @@
+# 서버 1대에 한 번 띄우는 공용 구성: PostgreSQL(개발 DB, 운영 DB)과 HTTPS 앞단(Caddy).
+# 앱은 compose.app.yml로 환경마다 따로 띄운다. 실행은 bin/deploy.sh가 한다.
+#   STATE_DIR: 서버에서 만든 설정 파일 위치 (/opt/duriseo/state)
+name: duriseo-infra
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: duriseo-postgres
+    restart: unless-stopped
+    env_file: ${STATE_DIR:?}/postgres.env
+    command:
+      - postgres
+      - -c
+      - shared_buffers=96MB
+      - -c
+      - max_connections=40
+      - -c
+      - work_mem=4MB
+      - -c
+      - timezone=UTC
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # TCP로 확인해야 첫 초기화 중(소켓만 열린 임시 서버)을 준비 완료로 착각하지 않는다
+      test: ["CMD-SHELL", "pg_isready -U postgres -h 127.0.0.1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    mem_limit: 320m
+    networks: [duriseo]
+    logging: &logging
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  caddy:
+    image: caddy:2.11-alpine
+    container_name: duriseo-caddy
+    restart: unless-stopped
+    env_file: ${STATE_DIR:?}/caddy.env
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      # 파일 하나가 아니라 폴더를 마운트해야 Caddyfile을 바꿨을 때 컨테이너에 보인다
+      - ./caddy:/etc/caddy:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    mem_limit: 96m
+    networks: [duriseo]
+    logging: *logging
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
+
+networks:
+  duriseo:
+    name: duriseo

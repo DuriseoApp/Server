@@ -72,4 +72,8 @@ com.duriseo.server
 | `dev` | AWS 서버의 개발 컨테이너 | 같은 서버 PostgreSQL의 개발 DB |
 | `prod` | AWS 서버의 운영 컨테이너 | 같은 서버 PostgreSQL의 운영 DB |
 
-설정값은 모두 환경변수로 받는다 (`.env.example`, `docs/SETUP.md`). 배포 구성(Docker Compose, 백업, GitHub Actions 배포)은 `docs/PLAN.md`의 키트 PR 3에서 만든다.
+설정값은 모두 환경변수로 받는다 (`.env.example`, `docs/SETUP.md`). 배포 구성은 `deploy/`(Docker Compose, Caddy, 배포·백업 스크립트, CloudFormation)와 `.github/workflows/deploy.yml`에 있고, 운영 방법은 `docs/DEPLOY.md`를 본다.
+
+- HTTPS는 앞단 Caddy가 끝낸다. 앱은 컨테이너 안에서 HTTP 8080만 연다.
+- 서버 1대에 자바 앱 2개와 DB가 있어 메모리가 작다 (앱 컨테이너 512~640MB). 큰 데이터를 한 번에 메모리에 올리지 않는다 (목록은 커서 페이지, 이미지는 스트림).
+- 앱이 AWS를 써야 하면(단위 7 S3) 키를 받지 않고 서버 IAM 역할(인스턴스 프로파일)의 권한을 쓴다. 권한은 `deploy/aws/duriseo-stack.yml`의 `ServerRole`에 추가한다.

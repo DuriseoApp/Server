@@ -24,7 +24,8 @@
 | `docs/ARCHITECTURE.md` | 패키지 구조, 의존 규칙, 권한 검사, 트랜잭션, 오류 모델, 시간 처리 |
 | `docs/CONVENTIONS.md` | 이름, DTO, 테스트, 커밋·PR 규칙 |
 | `docs/PLAN.md` | 작업 단위와 순서. 지금 어디까지 했는지 |
-| `docs/SETUP.md` | 맥 설정, 환경변수, GitHub Secrets |
+| `docs/SETUP.md` | 맥 설정, 환경변수, AWS 서버 처음 준비 |
+| `docs/DEPLOY.md` | 배포, 서버 로그 보기, 되돌리기, 백업 복구 (`deploy/`, `.github/workflows/deploy.yml`) |
 | `docs/progress/` | 작업 단위별 진행 기록 |
 
 ## 가장 중요한 규칙

@@ -1,0 +1,11 @@
+[Unit]
+Description=둘이서 운영 DB 백업 매일 04:00 (한국 시간)
+
+[Timer]
+# 서버 시간대는 UTC. 19:00 UTC = 04:00 KST
+OnCalendar=*-*-* 19:00:00 UTC
+Persistent=true
+RandomizedDelaySec=10m
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,15 @@
+# HTTPS 앞단. 도메인마다 Let's Encrypt 인증서를 자동으로 받고 갱신한다.
+# 값은 Parameter Store(/duriseo/config/*)에서 bin/deploy.sh가 caddy.env로 만든다.
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN_PROD} {
+	encode zstd gzip
+	reverse_proxy app-prod:8080
+}
+
+{$DOMAIN_DEV} {
+	encode zstd gzip
+	reverse_proxy app-dev:8080
+}
