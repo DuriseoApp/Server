@@ -1,6 +1,6 @@
 # 단위 1: 계정 (auth)
 
-> 브랜치: `feat/1-auth` · PR: (링크) · 상태: 진행 중 (범위 확인 대기)
+> 브랜치: `feat/1-auth` · PR: (링크) · 상태: 진행 중 (범위 확정) (범위 확인 대기)
 > 기준: PRD v0.6, API.md 1장·2장(R-01·R-09·R-11·R-14·R-17)·3.1·4.1~4.3·4.6~4.7·5장, ERD 3.1·3.2·4.1·4.3·4.5·4.6·5장
 > Docs 기준 커밋: DuriseoApp/Docs main `e7a31ad` (2026-10-26)
 
@@ -256,6 +256,22 @@ AC 하나에 테스트 하나 이상 (CONVENTIONS). "앱 동작"은 서버 API�
 14. **CONVENTIONS의 "AC 하나에 테스트 하나 이상"과 앱·웹 전용 AC.** FR-AUTH-03 AC4, FR-AUTH-04 AC1·AC2, FR-AUTH-05 AC3, FR-AUTH-07 AC4, FR-AUTH-08, FR-AUTH-09는 서버 API가 없다. 위 범위 표처럼 "앱 동작"으로 표시하고 서버 테스트를 두지 않아도 되는지.
 15. **PLAN.md 상태.** 키트 2(V1 마이그레이션)와 키트 3(PR #3)은 이미 main에 머지됐는데 `docs/PLAN.md` 상태가 "PR 완료"로 남아 있다. 단위 1 PR에서 "완료"로 고칠지.
 16. **(선택) `auth_sessions.user_id` 인덱스가 없다.** `ERD.md` 3.1 auth_sessions에는 `refresh_token_hash` UNIQUE만 있다. 로그인 때 "그 사용자의 다른 유효 세션 무효화"와 단위 6의 "유효 세션이 있는가"(R-16, DB-14)는 `user_id`로 찾는다. 지금 규모에서는 문제가 아니다. A) 그대로 B) ERD에 INDEX (user_id)를 추가하고 V2 마이그레이션.
+
+
+### 확인 필요 해결 (2026-10-26, Docs PR #7 = PRD v0.7 머지)
+
+사용자가 추천안대로 결정했고 Docs에 반영됐다. **아래 기준은 Docs main(PRD v0.7)의 API.md·ERD.md다.** 이 절과 Docs가 다르면 Docs가 맞다.
+
+- 1·2·4·5·6·8·11·12·13: API.md 1장(토큰 형식, 인증 실패 규칙·순서, refresh 본문 `{refreshToken}`), 3.1(`AuthTokens`·`Me`·`MeSpace`·`MePartner`, 경로별 요청·성공 상태, 검증), 4.2(Google `iss` 두 값·`name`, Kakao `/v2/user/me` 조회 시점과 4xx는 "사용자"), 5장
+- 3: refresh는 무작위 43자(32바이트 base64url), 해시만 저장 (D-81)
+- 7: Kakao 닉네임은 `/v2/user/me`의 `kakao_account.profile.nickname`, 신규 가입과 `/auth/link`("게스트" 교체)일 때만 호출
+- 9: `PUT /me/devices`는 단위 1. 알림 설정 API는 단위 6
+- 10: 단위 1은 개인 공간 사용자 탈퇴와 해제 없이 되는 처리까지. 커플 해제는 단위 2, 푸시·SYNC는 단위 6 (연결점만 남김)
+- 12: 닉네임은 앞뒤 공백 제거 후 코드 포인트 1~10 (D-82)
+- 14: 앱·웹 전용 AC는 "앱 동작"으로 표시하고 서버 테스트 없음
+- 15: PLAN.md의 키트 2·3을 "완료"로 이 단위 PR에서 고친다
+- 16: `auth_sessions.user_id` 인덱스는 이번에 넣지 않는다 (마이그레이션 없음)
+- 의존성: `nimbus-jose-jwt`(JWT 발급·검증, Google JWKS), Kakao는 Spring `RestClient`, 인증은 Spring Security 대신 인터셉터 + 인자 리졸버, UUIDv7은 Hibernate `@UuidGenerator(style = VERSION_7)`
 
 ## 결정
 
