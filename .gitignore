@@ -16,6 +16,8 @@ build/
 bin/
 !**/src/main/**/bin/
 !**/src/test/**/bin/
+# 배포 스크립트 폴더는 올린다 (위 bin/ 규칙에 걸리지 않게)
+!deploy/bin/
 
 ### IntelliJ IDEA ###
 .idea

@@ -93,7 +93,14 @@ shred -u /tmp/restore.dump
 2. CloudFormation › `duriseo` 스택 › 삭제.
 3. 백업 버킷은 남아요(데이터 보호). 필요 없으면 S3에서 비우고 지워요.
 
-## 7. 비밀값이 있는 곳
+## 7. 자주 나는 오류
+
+| 증상 | 원인과 해결 |
+| --- | --- |
+| Actions `configure-aws-credentials`에서 `Not authorized to perform sts:AssumeRoleWithWebIdentity` | GitHub이 보낸 신분(OIDC `sub`)이 배포 역할 신뢰 정책에 없음. CloudTrail › 이벤트 기록 › `AssumeRoleWithWebIdentity` 이벤트의 `userName`이 GitHub이 보낸 값이다. GitHub은 `repo:DuriseoApp@<조직ID>/Server@<레포ID>:...` 형식을 쓴다. 템플릿 파라미터 `GitHubRepositoryWithIds`와 IAM 역할 `duriseo-DeployRole-*`의 신뢰 정책을 그 값에 맞춘다 |
+| `https://도메인`이 열리지 않거나 인증서 오류 | DuckDNS IP가 `ServerPublicIp`와 같은지, `docker logs duriseo-caddy`에 인증서 발급 오류가 있는지 본다 |
+
+## 8. 비밀값이 있는 곳
 
 | 값 | 위치 |
 | --- | --- |

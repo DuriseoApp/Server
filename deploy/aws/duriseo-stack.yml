@@ -1,54 +1,56 @@
+# Keep this file ASCII only: the CloudFormation console shows non-ASCII text as "???".
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >-
-  둘이서 서버 인프라 (서울 리전). EC2 1대(Docker Compose로 개발 앱, 운영 앱, PostgreSQL, Caddy),
-  고정 IP, 운영 DB 백업 버킷, 이미지 저장소(ECR), GitHub Actions 배포 역할(OIDC), 설정값(Parameter Store).
-  설치 방법은 레포의 docs/SETUP.md 3장.
+  Duriseo server infrastructure (Seoul). One EC2 instance running Docker Compose (dev app, prod app,
+  PostgreSQL, Caddy), Elastic IP, prod DB backup bucket, ECR, GitHub Actions deploy role (OIDC),
+  settings in Parameter Store. Setup guide: docs/SETUP.md section 3 in the Server repo.
 
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
-      - Label: { default: "서버" }
+      - Label: { default: "Server" }
         Parameters: [InstanceType, LatestAmiId]
-      - Label: { default: "도메인 (DuckDNS 등)" }
+      - Label: { default: "Domains (DuckDNS)" }
         Parameters: [DomainProd, DomainDev, AcmeEmail]
-      - Label: { default: "앱 설정값 (claude.ai 프로젝트 config/environment.md)" }
+      - Label: { default: "App settings (claude.ai project doc config/environment.md)" }
         Parameters: [GoogleWebClientId, KakaoAppId, FirebaseProjectId]
-      - Label: { default: "GitHub 배포" }
-        Parameters: [GitHubRepository, CreateGitHubOidcProvider]
+      - Label: { default: "GitHub deploy" }
+        Parameters: [GitHubRepository, GitHubRepositoryWithIds, CreateGitHubOidcProvider]
     ParameterLabels:
-      InstanceType: { default: "서버 크기" }
-      LatestAmiId: { default: "OS 이미지 (바꾸지 않음)" }
-      DomainProd: { default: "운영 API 도메인" }
-      DomainDev: { default: "개발 API 도메인" }
-      AcmeEmail: { default: "인증서 알림 메일" }
-      GoogleWebClientId: { default: "Google 웹 클라이언트 ID" }
-      KakaoAppId: { default: "카카오 앱 ID" }
-      FirebaseProjectId: { default: "Firebase 프로젝트 ID" }
-      GitHubRepository: { default: "서버 레포 (owner/repo)" }
-      CreateGitHubOidcProvider: { default: "GitHub OIDC 공급자 만들기" }
+      InstanceType: { default: "Server size" }
+      LatestAmiId: { default: "OS image (leave as is)" }
+      DomainProd: { default: "Prod API domain" }
+      DomainDev: { default: "Dev API domain" }
+      AcmeEmail: { default: "Certificate notice email" }
+      GoogleWebClientId: { default: "Google web client ID" }
+      KakaoAppId: { default: "Kakao app ID" }
+      FirebaseProjectId: { default: "Firebase project ID" }
+      GitHubRepository: { default: "Server repository (owner/repo)" }
+      GitHubRepositoryWithIds: { default: "Server repository with IDs (owner@id/repo@id)" }
+      CreateGitHubOidcProvider: { default: "Create GitHub OIDC provider" }
 
 Parameters:
   InstanceType:
     Type: String
     Default: t4g.small
     AllowedValues: [t4g.micro, t4g.small, t4g.medium]
-    Description: ARM(Graviton) 서버. t4g.small = 2GB 메모리
+    Description: ARM (Graviton). t4g.small = 2 GB memory
   LatestAmiId:
     Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
     Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64
-    Description: Amazon Linux 2023 ARM64 최신 이미지
+    Description: Latest Amazon Linux 2023 ARM64 image
   DomainProd:
     Type: String
     AllowedPattern: "^[a-z0-9-]+(\\.[a-z0-9-]+)+$"
-    Description: "예: duriseo-api.duckdns.org"
+    Description: "e.g. duriseo-api.duckdns.org"
   DomainDev:
     Type: String
     AllowedPattern: "^[a-z0-9-]+(\\.[a-z0-9-]+)+$"
-    Description: "예: duriseo-dev-api.duckdns.org"
+    Description: "e.g. duriseo-dev-api.duckdns.org"
   AcmeEmail:
     Type: String
     AllowedPattern: "^[^@\\s]+@[^@\\s]+$"
-    Description: Let's Encrypt 인증서 만료 알림을 받을 메일
+    Description: Email for Let's Encrypt certificate notices
   GoogleWebClientId:
     Type: String
     MinLength: 1
@@ -61,21 +63,28 @@ Parameters:
   GitHubRepository:
     Type: String
     Default: DuriseoApp/Server
+  GitHubRepositoryWithIds:
+    Type: String
+    Default: DuriseoApp@341789341/Server@1418469990
+    AllowedPattern: "^[^@/]+@[0-9]+/[^@/]+@[0-9]+$"
+    Description: >-
+      GitHub now puts owner and repository IDs in the OIDC subject (repo:OWNER@ID/REPO@ID:...).
+      IDs: GET https://api.github.com/repos/OWNER/REPO (owner.id, id)
   CreateGitHubOidcProvider:
     Type: String
     Default: "true"
     AllowedValues: ["true", "false"]
-    Description: 이 AWS 계정에 GitHub OIDC 공급자가 이미 있으면 false
+    Description: Set false if this AWS account already has a GitHub OIDC provider
 
 Conditions:
   CreateOidc: !Equals [!Ref CreateGitHubOidcProvider, "true"]
 
 Resources:
-  # ───────── 저장소 ─────────
+  # ---------- Storage ----------
 
   BackupBucket:
     Type: AWS::S3::Bucket
-    # 스택을 지워도 백업은 남긴다
+    # Keep backups even if the stack is deleted
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:
@@ -142,7 +151,7 @@ Resources:
       Tags:
         - { Key: Project, Value: duriseo }
 
-  # ───────── 서버 ─────────
+  # ---------- Server ----------
 
   ServerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -167,7 +176,7 @@ Resources:
             Principal: { Service: ec2.amazonaws.com }
             Action: sts:AssumeRole
       ManagedPolicyArns:
-        # SSM 에이전트: 배포 명령 실행, 콘솔 Session Manager 접속
+        # SSM agent: deploy commands and console Session Manager
         - !Sub "arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore"
       Policies:
         - PolicyName: duriseo-server
@@ -219,7 +228,7 @@ Resources:
       InstanceType: !Ref InstanceType
       IamInstanceProfile: !Ref ServerInstanceProfile
       SecurityGroupIds: [!GetAtt ServerSecurityGroup.GroupId]
-      # 콘솔에서 실수로 종료하지 않게 한다. 서버를 지우려면 먼저 종료 방지를 끈다 (docs/DEPLOY.md)
+      # Prevent accidental termination. Turn it off before deleting the server (docs/DEPLOY.md)
       DisableApiTermination: true
       BlockDeviceMappings:
         - DeviceName: /dev/xvda
@@ -234,8 +243,8 @@ Resources:
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
-          # 처음 부팅할 때 한 번 실행된다: Docker, Docker Compose, 스왑, 폴더 준비.
-          # 앱과 DB는 첫 배포(GitHub Actions)가 띄운다.
+          # Runs once on first boot: Docker, Docker Compose, swap, folders.
+          # The apps and the DB are started by the first deploy (GitHub Actions).
           set -euxo pipefail
 
           dnf install -y aws-cfn-bootstrap
@@ -257,7 +266,7 @@ Resources:
           install -m 755 /tmp/docker-compose /usr/local/lib/docker/cli-plugins/docker-compose
           docker compose version
 
-          # 메모리 2GB에 자바 앱 2개와 DB가 있으므로 스왑 2GB
+          # 2 GB swap: two Java apps and the DB share 2 GB of memory
           if [ ! -f /swapfile ]; then
             fallocate -l 2G /swapfile
             chmod 600 /swapfile
@@ -282,7 +291,7 @@ Resources:
         - { Key: Name, Value: duriseo-server }
         - { Key: Project, Value: duriseo }
 
-  # ───────── GitHub Actions 배포 ─────────
+  # ---------- GitHub Actions deploy ----------
 
   GitHubOidcProvider:
     Type: AWS::IAM::OIDCProvider
@@ -309,8 +318,13 @@ Resources:
             Condition:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
-                # PR에서는 이 역할을 쓸 수 없다. main 브랜치와 배포 환경에서만
+                # Not usable from pull requests: main branch and deploy environments only
                 token.actions.githubusercontent.com:sub:
+                  # New subject format with immutable IDs (what GitHub sends today)
+                  - !Sub "repo:${GitHubRepositoryWithIds}:ref:refs/heads/main"
+                  - !Sub "repo:${GitHubRepositoryWithIds}:environment:development"
+                  - !Sub "repo:${GitHubRepositoryWithIds}:environment:production"
+                  # Older name-only format, kept in case GitHub sends it
                   - !Sub "repo:${GitHubRepository}:ref:refs/heads/main"
                   - !Sub "repo:${GitHubRepository}:environment:development"
                   - !Sub "repo:${GitHubRepository}:environment:production"
@@ -354,8 +368,8 @@ Resources:
       Tags:
         - { Key: Project, Value: duriseo }
 
-  # ───────── 설정값 (Parameter Store) ─────────
-  # 비밀값(/duriseo/secret/*)은 템플릿에 넣지 않고 콘솔에서 SecureString으로 직접 만든다 (docs/SETUP.md)
+  # ---------- Settings (Parameter Store) ----------
+  # Secrets (/duriseo/secret/*) are not in this template. Create them as SecureString in the console (docs/SETUP.md)
 
   ParamDomainProd:
     Type: AWS::SSM::Parameter
@@ -387,14 +401,14 @@ Resources:
 
 Outputs:
   ServerPublicIp:
-    Description: DuckDNS의 두 도메인에 이 IP를 넣는다
+    Description: Put this IP into both DuckDNS domains
     Value: !Ref ServerIp
   DeployRoleArn:
-    Description: GitHub 레포 Secrets의 AWS_DEPLOY_ROLE_ARN에 넣는다
+    Description: Put this into the GitHub repository secret AWS_DEPLOY_ROLE_ARN
     Value: !GetAtt DeployRole.Arn
   InstanceId:
-    Description: 서버 ID (Session Manager 접속용)
+    Description: Server instance ID (for Session Manager)
     Value: !Ref Server
   BackupBucketName:
-    Description: 운영 DB 백업 버킷 (30일 보관)
+    Description: Prod DB backup bucket (kept 30 days)
     Value: !Ref BackupBucket
