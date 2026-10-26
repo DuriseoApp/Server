@@ -289,11 +289,18 @@ abstract class IntegrationTestSupport {
 
 	/** [used]이면 사용된 코드, 아니면 유효한 코드(사용·무효화 없음) */
 	protected fun insertInviteCode(creatorId: UUID, code: String, used: Boolean = false) {
-		jdbc.update(
-			"insert into invite_codes (id, code, creator_user_id, expires_at, created_at) values (?, ?, ?, ?, ?)",
-			UUID.randomUUID(), code, creatorId, ts(clock.instant().plusSeconds(600)), ts(clock.instant()),
-		)
-		if (used) jdbc.update("update invite_codes set used_at = ? where code = ?", ts(clock.instant()), code)
+		if (used) {
+			// 사용된 코드는 같은 insert에서 used_at을 넣는다 (유효한 코드는 사용자당 하나라는 부분 UNIQUE에 걸리지 않게)
+			jdbc.update(
+				"insert into invite_codes (id, code, creator_user_id, expires_at, used_at, created_at) values (?, ?, ?, ?, ?, ?)",
+				UUID.randomUUID(), code, creatorId, ts(clock.instant().plusSeconds(600)), ts(clock.instant()), ts(clock.instant()),
+			)
+		} else {
+			jdbc.update(
+				"insert into invite_codes (id, code, creator_user_id, expires_at, created_at) values (?, ?, ?, ?, ?)",
+				UUID.randomUUID(), code, creatorId, ts(clock.instant().plusSeconds(600)), ts(clock.instant()),
+			)
+		}
 	}
 
 	/**

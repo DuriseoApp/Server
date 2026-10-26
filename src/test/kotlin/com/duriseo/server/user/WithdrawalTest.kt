@@ -275,8 +275,10 @@ class WithdrawalTest : IntegrationTestSupport() {
 		val strangerPurgeAt = instantOf("select purge_at from spaces where id = ?", strangers)
 		assertEquals(START.plus(Duration.ofDays(30)), instantOf("select purge_at from spaces where id = ?", coupleSpace))
 		clock.advance(Duration.ofDays(3))
+		// 3일이 지나 access 토큰(1시간)이 만료됐으므로 옮긴 시계 기준으로 다시 로그인한다
+		val relogin = socialTokens("GOOGLE", "fake-google-token")
 
-		deleteMe(member.accessToken).andExpect(status().isNoContent)
+		deleteMe(relogin.accessToken).andExpect(status().isNoContent)
 
 		assertEquals(clock.instant().plus(Duration.ofDays(90)), instantOf("select purge_at from spaces where id = ?", coupleSpace))
 		assertEquals(1, count("select count(*) from spaces where id = ? and status = 'UNLINKED' and unlinked_at is not null", coupleSpace))
@@ -293,8 +295,9 @@ class WithdrawalTest : IntegrationTestSupport() {
 		val later = START.plus(Duration.ofDays(120))
 		jdbc.update("update spaces set purge_at = ? where id = ?", ts(later), coupleSpace)
 		clock.advance(Duration.ofDays(3))
+		val relogin = socialTokens("GOOGLE", "fake-google-token")
 
-		deleteMe(member.accessToken).andExpect(status().isNoContent)
+		deleteMe(relogin.accessToken).andExpect(status().isNoContent)
 
 		assertEquals(later, instantOf("select purge_at from spaces where id = ?", coupleSpace))
 	}
