@@ -165,9 +165,11 @@ jobs:
           script=$(cat <<EOF
           set -eu
           release=/opt/duriseo/releases/$SHA
-          if [ ! -d "\$release" ]; then
+          if [ ! -f "\$release/bin/deploy.sh" ]; then
             tmp=\$(mktemp -d)
             curl -fsSL "https://codeload.github.com/$REPO/tar.gz/$SHA" | tar -xz -C "\$tmp" --strip-components=1 --wildcards '*/deploy/*'
+            test -f "\$tmp/deploy/bin/deploy.sh" || { echo "이 커밋에 deploy/bin/deploy.sh가 없습니다"; exit 1; }
+            if [ -d "\$release" ]; then rm -r -- "\$release"; fi
             mv "\$tmp/deploy" "\$release"
             rmdir "\$tmp"
           fi
