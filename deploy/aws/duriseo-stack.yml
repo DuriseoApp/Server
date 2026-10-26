@@ -15,7 +15,7 @@ Metadata:
       - Label: { default: "App settings (claude.ai project doc config/environment.md)" }
         Parameters: [GoogleWebClientId, KakaoAppId, FirebaseProjectId]
       - Label: { default: "GitHub deploy" }
-        Parameters: [GitHubRepository, CreateGitHubOidcProvider]
+        Parameters: [GitHubRepository, GitHubRepositoryWithIds, CreateGitHubOidcProvider]
     ParameterLabels:
       InstanceType: { default: "Server size" }
       LatestAmiId: { default: "OS image (leave as is)" }
@@ -26,6 +26,7 @@ Metadata:
       KakaoAppId: { default: "Kakao app ID" }
       FirebaseProjectId: { default: "Firebase project ID" }
       GitHubRepository: { default: "Server repository (owner/repo)" }
+      GitHubRepositoryWithIds: { default: "Server repository with IDs (owner@id/repo@id)" }
       CreateGitHubOidcProvider: { default: "Create GitHub OIDC provider" }
 
 Parameters:
@@ -62,6 +63,13 @@ Parameters:
   GitHubRepository:
     Type: String
     Default: DuriseoApp/Server
+  GitHubRepositoryWithIds:
+    Type: String
+    Default: DuriseoApp@341789341/Server@1418469990
+    AllowedPattern: "^[^@/]+@[0-9]+/[^@/]+@[0-9]+$"
+    Description: >-
+      GitHub now puts owner and repository IDs in the OIDC subject (repo:OWNER@ID/REPO@ID:...).
+      IDs: GET https://api.github.com/repos/OWNER/REPO (owner.id, id)
   CreateGitHubOidcProvider:
     Type: String
     Default: "true"
@@ -312,6 +320,11 @@ Resources:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
                 # Not usable from pull requests: main branch and deploy environments only
                 token.actions.githubusercontent.com:sub:
+                  # New subject format with immutable IDs (what GitHub sends today)
+                  - !Sub "repo:${GitHubRepositoryWithIds}:ref:refs/heads/main"
+                  - !Sub "repo:${GitHubRepositoryWithIds}:environment:development"
+                  - !Sub "repo:${GitHubRepositoryWithIds}:environment:production"
+                  # Older name-only format, kept in case GitHub sends it
                   - !Sub "repo:${GitHubRepository}:ref:refs/heads/main"
                   - !Sub "repo:${GitHubRepository}:environment:development"
                   - !Sub "repo:${GitHubRepository}:environment:production"
