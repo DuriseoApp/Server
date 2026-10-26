@@ -1,5 +1,7 @@
 package com.duriseo.server.user
 
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
+import org.hamcrest.Matchers.containsString
 import com.duriseo.server.TestcontainersConfig
 import com.duriseo.server.support.IntegrationTestSupport
 import com.duriseo.server.support.TestClockConfig
@@ -56,9 +58,10 @@ class MeTest : IntegrationTestSupport() {
 		val tokens = startGuest()
 
 		getMe(tokens.accessToken)
-			.andExpect(jsonPath("$.space.partner").exists())
-			.andExpect(jsonPath("$.space.togetherColor").exists())
-			.andExpect(jsonPath("$.space.startDate").exists())
+			// jsonPath(...).exists()는 값이 null이면 "없음"으로 보므로 본문 문자열로 확인한다
+			.andExpect(content().string(containsString("\"partner\":null")))
+			.andExpect(content().string(containsString("\"togetherColor\":null")))
+			.andExpect(content().string(containsString("\"startDate\":null")))
 	}
 
 	@Test
