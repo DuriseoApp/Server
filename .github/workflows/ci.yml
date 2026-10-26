@@ -41,6 +41,13 @@ jobs:
               t += int(r.get("tests", 0)); f += int(r.get("failures", 0)); e += int(r.get("errors", 0)); s += int(r.get("skipped", 0))
           line = f"테스트 {t}개 실행, 실패 {f + e}개, 건너뜀 {s}개"
           print(f"::notice title=테스트 결과::{line}")
+          # 실패한 테스트 이름과 메시지를 Annotations에 올린다 (로그를 열지 않고도 원인을 보게)
+          for path in glob.glob("build/test-results/test/*.xml"):
+              for case in ET.parse(path).getroot().iter("testcase"):
+                  for bad in list(case.findall("failure")) + list(case.findall("error")):
+                      msg = (bad.get("message") or "") + "\n" + (bad.text or "")[:1500]
+                      esc = msg.replace("%", "%25").replace("\r", "").replace("\n", "%0A")
+                      print(f"::error title=실패: {case.get('classname','').split('.')[-1]} > {case.get('name','')}::{esc}")
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as out:
               out.write(f"### {line}\n")
           PY
