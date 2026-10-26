@@ -3,7 +3,7 @@
 둘이서(커플 일정·메모 앱)의 API 서버예요. Kotlin, Spring Boot 4, PostgreSQL 16을 쓰고 AWS 서울 리전에 배포해요.
 
 - 기획 문서(PRD·ERD·API)는 [DuriseoApp/Docs](https://github.com/DuriseoApp/Docs)에 있고, 서버는 그 문서를 기준으로 만들어요.
-- 개발 규칙은 `CLAUDE.md`, 구조는 `docs/ARCHITECTURE.md`, 작업 순서는 `docs/PLAN.md`, 맥 설정은 `docs/SETUP.md`를 봐요.
+- 개발 규칙은 `CLAUDE.md`, 구조는 `docs/ARCHITECTURE.md`, 작업 순서는 `docs/PLAN.md`, 맥 설정과 AWS 준비는 `docs/SETUP.md`, 배포·운영은 `docs/DEPLOY.md`를 봐요.
 
 ## 실행
 

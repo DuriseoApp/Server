@@ -54,3 +54,13 @@ allOpen {
 tasks.withType<Test> {
 	useJUnitPlatform()
 }
+
+// Dockerfile이 이 이름으로 jar를 담는다
+tasks.bootJar {
+	archiveFileName = "app.jar"
+}
+
+// 실행 jar 하나만 만든다 (plain jar는 쓰지 않음)
+tasks.jar {
+	enabled = false
+}

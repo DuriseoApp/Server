@@ -1,0 +1,8 @@
+[Unit]
+Description=둘이서 운영 DB 백업 (S3)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/duriseo/current/bin/backup.sh

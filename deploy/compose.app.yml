@@ -1,0 +1,30 @@
+# 앱 하나(dev 또는 prod). 환경마다 다른 Compose 프로젝트(duriseo-dev, duriseo-prod)로 띄워서
+# 한 환경을 배포해도 다른 환경 컨테이너는 건드리지 않는다. 실행은 bin/deploy.sh가 한다.
+#   APP_ENV       dev | prod
+#   APP_IMAGE     ECR 이미지 URI:커밋SHA
+#   HOST_PORT     서버 안에서만 열리는 포트 (헬스 확인용, dev 8081 / prod 8080)
+#   APP_MEM_LIMIT 컨테이너 메모리 상한
+#   STATE_DIR     설정 파일 위치 (/opt/duriseo/state)
+services:
+  app:
+    image: ${APP_IMAGE:?}
+    restart: unless-stopped
+    env_file: ${STATE_DIR:?}/app-${APP_ENV:?}.env
+    ports:
+      - "127.0.0.1:${HOST_PORT:?}:8080"
+    mem_limit: ${APP_MEM_LIMIT:?}
+    stop_grace_period: 30s
+    networks:
+      duriseo:
+        # Caddy가 app-dev, app-prod 이름으로 찾아온다
+        aliases: ["app-${APP_ENV}"]
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+networks:
+  duriseo:
+    name: duriseo
+    external: true

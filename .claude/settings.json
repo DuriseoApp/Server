@@ -38,6 +38,7 @@
     "ask": [
       "Edit(.claude/**)",
       "Edit(.github/**)",
+      "Edit(deploy/**)",
       "Edit(scripts/**)",
       "Edit(CLAUDE.md)",
       "Edit(settings.gradle.kts)",
