@@ -3,6 +3,7 @@ package com.duriseo.server.auth
 import com.duriseo.server.TestcontainersConfig
 import com.duriseo.server.support.IntegrationTestSupport
 import com.duriseo.server.support.TestClockConfig
+import com.duriseo.server.user.domain.SocialProvider
 import org.junit.jupiter.api.Test
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
@@ -127,11 +128,9 @@ class AuthTokenTest : IntegrationTestSupport() {
 		val tokens = startGuest()
 		// refresh: access 토큰 없이 본문의 refresh 토큰만으로 200
 		refresh(tokens.refreshToken).andExpect(status().isOk)
-		// social: 2부에서 경로가 생긴다. 지금은 없는 경로라 NOT_FOUND이지만 어느 경우에도 인증 실패(401)는 아니다
-		val social = mockMvc.perform(
-			post("$API/auth/social").contentType(MediaType.APPLICATION_JSON).content("""{"provider":"GOOGLE","token":"x"}"""),
-		).andReturn().response.status
-		assertNotEquals(401, social)
+		// social: 가짜 제공자에 등록한 토큰으로 access 토큰 없이 200
+		registerSocial(SocialProvider.GOOGLE, "fake-google-token", "fake-google-sub-1", "홍길동")
+		social("GOOGLE", "fake-google-token").andExpect(status().isOk)
 	}
 
 	// ── refresh 토큰 ────────────────────────────────────

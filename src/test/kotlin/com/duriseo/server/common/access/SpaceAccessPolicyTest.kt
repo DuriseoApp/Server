@@ -16,7 +16,7 @@ import kotlin.test.assertFailsWith
 /**
  * API.md 2장 R- 규칙을 `SpaceAccessPolicy` 한 곳에서 확인한다 (NFR-SEC-02). 규칙마다 허용·거부 테스트를 둔다.
  * R-01·R-09·R-11은 단위 1에 쓰는 경로가 없어 정책 컴포넌트를 직접 부른다 (경로 테스트는 그 경로의 단위에서 더한다).
- * R-14의 경로 테스트(`/auth/link`, `/auth/switch`)는 2부에서 경로가 생기면 더하고, R-17은 `LogoutTest`가 경로로 확인한다.
+ * R-14의 경로 테스트(`/auth/link`, `/auth/switch`)는 `AuthLinkTest`·`AuthSwitchTest`가, R-17은 `LogoutTest`가 경로로 확인한다.
  */
 @SpringBootTest
 @Import(TestcontainersConfig::class, TestClockConfig::class)

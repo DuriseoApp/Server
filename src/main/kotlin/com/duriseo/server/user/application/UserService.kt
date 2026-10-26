@@ -55,6 +55,21 @@ class UserService(
 		}
 	}
 
+	/**
+	 * 게스트 연동 (`POST /auth/link`, API.md 4.3 3~4단계): 같은 사용자를 MEMBER로 바꾼다. ID와 모든 데이터는 그대로다.
+	 * 닉네임이 정확히 "게스트"일 때만 소셜 프로필 이름으로 바꾼다 (이름이 없거나 공백뿐이면 "사용자", D-68, D-69, D-82).
+	 * 사용자가 직접 바꾼 닉네임은 그대로 둔다. 사용자 행을 잠근 뒤 처리하며, 그 사이 회원이 됐으면 403 GUEST_ONLY다.
+	 */
+	@Transactional(propagation = Propagation.MANDATORY)
+	fun promoteGuestToMember(userId: UUID, socialName: String?) {
+		val user = lockForUpdate(userId)
+		if (user.deletedAt != null) throw ApiException(ErrorCode.SESSION_INVALID, "user not found")
+		if (user.accountType != AccountType.GUEST) throw ApiException(ErrorCode.GUEST_ONLY, "guests only")
+		user.accountType = AccountType.MEMBER
+		if (user.nickname == Nicknames.GUEST_DEFAULT) user.nickname = Nicknames.fromSocialName(socialName)
+		user.updatedAt = clock.nowInSeconds()
+	}
+
 	/** 사용자 행을 잠그고(SELECT … FOR UPDATE) 읽는다. 로그인 3종의 이전 세션·기기 정리와 switch가 쓴다 (D-51, DB-12) */
 	@Transactional(propagation = Propagation.MANDATORY)
 	fun lockForUpdate(userId: UUID): User =

@@ -1,6 +1,6 @@
 # 단위 1: 계정 (auth)
 
-> 브랜치: `feat/1-auth` · PR: (링크) · 상태: 진행 중 (범위 확정) (범위 확인 대기)
+> 브랜치: `feat/1-auth` · PR: (링크) · 상태: 리뷰 중 (구현 1부·2부 완료)
 > 기준: PRD v0.6, API.md 1장·2장(R-01·R-09·R-11·R-14·R-17)·3.1·4.1~4.3·4.6~4.7·5장, ERD 3.1·3.2·4.1·4.3·4.5·4.6·5장
 > Docs 기준 커밋: DuriseoApp/Docs main `e7a31ad` (2026-10-26)
 
@@ -296,6 +296,20 @@ AC 하나에 테스트 하나 이상 (CONVENTIONS). "앱 동작"은 서버 API�
 - `PATCH /me`는 "필드 없음"과 `null`을 구분해야 해서 본문을 `Map`으로 받아 `UpdateMeRequest.parse`에서 검사한다. 시간대는 `ZoneId.getAvailableZoneIds()`에 있는 이름만 허용한다 (`+09:00`, `UTC+9` 같은 오프셋 표기는 거부).
 - JVM 메서드 이름에는 `/`를 쓸 수 없어 테스트 이름의 `/auth/guest`, `PATCH /me` 등은 `auth 아래 guest`, `PATCH me`처럼 적었다.
 
+구현 2부에서 정한 것:
+
+- 소셜 토큰 검증(`SocialTokenVerifier`)과 Kakao 닉네임 조회는 외부 호출이라 **DB 트랜잭션 밖**에서 하고, 검증이 끝난 뒤 짧은 트랜잭션을 연다. `SocialAuthService`는 `@Transactional`이 아니라 `TransactionTemplate`으로 범위를 정한다. 검증이 실패하면 트랜잭션을 열기 전이라 아무 행도 바뀌지 않는다.
+- Google 검증은 Nimbus로 직접 한다: RS256만 받고, 공개키는 `GoogleKeySource`(Nimbus `JWKSourceBuilder` 캐시, 연결 2초·읽기 3초)로 찾고, `iss` 두 값·`aud`·`exp`는 주입된 `Clock`으로 확인한다. `sub`가 비었거나 100자를 넘으면(`provider_user_id`는 varchar(100)) 401 `SOCIAL_TOKEN_INVALID`다. `email` 등 다른 클레임은 읽지 않는다.
+- Kakao는 `RestClient`(JDK HttpClient, 연결 2초·읽기 3초)로 부른다. `access_token_info`가 4xx면(429 포함) API.md대로 401 `SOCIAL_TOKEN_INVALID`, 그 밖의 실패(5xx·시간 초과·`id`/`app_id` 없는 응답)는 500 `INTERNAL_ERROR`다. 닉네임은 `SocialIdentity.profileName()`이 불릴 때만 `v2/user/me`를 부른다 (신규 가입, 닉네임이 정확히 "게스트"인 연동). 설정된 앱 ID가 비어 있으면 어떤 토큰도 401이다.
+- 같은 소셜 계정의 첫 로그인이 동시에 오면 `uq_social_accounts_provider_user` 위반을 제약 이름으로 알아보고 이미 생긴 회원으로 로그인한다. `/auth/link`는 같은 위반을 409 `SOCIAL_ALREADY_USED`로 바꾼다.
+- `/auth/link`는 R-14를 소셜 검증 앞과 트랜잭션 안(사용자 행을 잠근 뒤 `promoteGuestToMember`)에서 두 번 확인한다. 닉네임이 필요한지(정확히 "게스트")는 검증 뒤 트랜잭션 밖에서 읽어 정하고, 그 사이 닉네임이 "게스트"로 바뀌는 드문 경우에는 이름 없음으로 보아 "사용자"가 된다.
+- `/auth/switch`는 트랜잭션 안에서 소셜 계정 재조회 → 대상 회원 행 잠금(탈퇴했거나 MEMBER가 아니면 404) → 게스트 행 잠금(그 사이 탈퇴·연동했으면 401/403) → 게스트 탈퇴 → 로그인 3종 정리 → 새 세션 순서다. 잠금은 대상 회원 먼저, 게스트 나중이다.
+- 탈퇴는 `WithdrawalService`(user)가 ERD 4.3 순서로 하고, 게스트 삭제(switch)와 단위 6의 게스트 정리가 `eraseInTransaction`을 그대로 부른다. 세션은 `SessionService`(auth)가 `WITHDRAWN`으로 무효화한 뒤 지운다. 알림·즐겨찾기·일정 알림·초대코드는 아직 엔티티가 없어 `WithdrawalDataEraser`가 네이티브 SQL로 지운다. "유효한 초대코드"는 `used_at`과 `revoked_at`이 모두 null인 코드다.
+- **커플 해제 연결점**: 탈퇴하는 사용자의 활성 공간이 COUPLE이면 `WithdrawalService.unlinkCoupleBeforeWithdrawal`이 `IllegalStateException`을 던져 500 `INTERNAL_ERROR`가 되고 전체가 롤백된다 (단위 2 전에는 커플 공간이 생길 수 없다). 단위 2가 이 함수에서 4.5 연결 해제와 상대 `COUPLE_UNLINKED` 행을 만들고 상대 ID를 돌려주면 `UserWithdrawn.partnerUserId`에 담긴다. 이때 테스트 `FR-AUTH-06 AC2 활성 커플 공간 사용자의 탈퇴는 …500…`을 해제 동작 테스트로 바꾼다.
+- `UserWithdrawn` 이벤트(탈퇴 트랜잭션 안에서 발행)에 익명화 전 닉네임·`profile_image_key`·상대 ID(지금은 null)·Kakao `provider_user_id`를 담는다. Kakao 연결 끊기는 `KakaoUnlinkListener`(`AFTER_COMMIT`)가 하고, 실패는 사용자 UUID와 예외 종류만 로그에 남긴다 (Kakao ID·키·토큰 제외). 어드민 키가 비어 있으면 `KakaoApiClient.unlink`가 경고만 남기고 건너뛴다.
+- 테스트 지원: `TestClockConfig`가 `TestSocialConfig`(가짜 `SocialTokenVerifier`, 가짜 `KakaoUnlinker`, 둘 다 `@Primary`)를 함께 가져와 모든 통합 테스트가 한 Spring 컨텍스트(한 PostgreSQL 컨테이너)를 공유한다. 가짜는 `delegate`로 실제 Google 검증기를 끼울 수 있다 (NFR-PRIV-01 경로 테스트).
+- 1부가 `LoginService`를 직접 불러 확인하던 FR-AUTH-02 AC3 테스트는 `POST /auth/social` 경로 테스트로 바꿨다 (`LoginCleanupTest`). `AuthTokenTest`의 공개 경로 테스트(social)와 `LogoutTest`의 `R-17 연동한 게스트…`도 가짜 제공자와 `/auth/link` 경로를 쓰도록 바꿨다.
+
 ## 리뷰 기록
 
 | 회차 | Critical | Major | 비고 |
@@ -303,6 +317,9 @@ AC 하나에 테스트 하나 이상 (CONVENTIONS). "앱 동작"은 서버 API�
 
 ## 남은 일
 
-- 범위 확인(위 "확인 필요" 1~16 답변) 뒤 **start**
+- 리뷰(`server-reviewer`) Critical 0까지, CI 초록불 확인 (이 환경은 Gradle을 못 돌려 구현 2부는 CI가 첫 컴파일이다)
 - 사용자: 단위 1을 dev에 배포하기 전에 Parameter Store `/duriseo/secret/KAKAO_ADMIN_KEY` 등록 (SETUP 3.5)
+- 사용자: Kakao Developers 동의항목 "닉네임" 켜기 (API.md 4.2, 꺼져 있으면 Kakao 가입 닉네임이 모두 "사용자"가 된다)
+- 단위 2: `WithdrawalService.unlinkCoupleBeforeWithdrawal` 채우기 (위 "결정")
+- 단위 6: 게스트 정리 작업이 `WithdrawalService.eraseInTransaction`을 부르고, `UserWithdrawn`을 듣는 푸시·SYNC. 단위 7: `UserWithdrawn.profileImageKey`로 파일 삭제
 - Android 단위 2에 알릴 것: 토큰 응답·refresh 요청 형식(확인 필요 1·2), Google 로그인 때 profile 범위 요청(확인 필요 7), `SESSION_REPLACED`/`SESSION_INVALID` 처리

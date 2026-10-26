@@ -2,6 +2,7 @@ package com.duriseo.server.support
 
 import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.context.annotation.Bean
+import org.springframework.context.annotation.Import
 import org.springframework.context.annotation.Primary
 import java.time.Clock
 import java.time.Duration
@@ -30,8 +31,9 @@ class MutableClock(initial: Instant) : Clock() {
 	override fun instant(): Instant = current
 }
 
-/** 통합 테스트가 `@Import` 한다. 운영 `Clock` 빈 대신 이 시계를 쓴다 */
+/** 통합 테스트가 `@Import` 한다. 운영 `Clock` 빈 대신 이 시계를 쓰고, 소셜 가짜(`TestSocialConfig`)도 함께 가져온다 */
 @TestConfiguration(proxyBeanMethods = false)
+@Import(TestSocialConfig::class)
 class TestClockConfig {
 
 	@Bean

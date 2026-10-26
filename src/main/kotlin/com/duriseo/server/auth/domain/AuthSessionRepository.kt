@@ -28,6 +28,11 @@ interface AuthSessionRepository : JpaRepository<AuthSession, UUID> {
 		@Param("reason") reason: SessionRevokeReason,
 	): Int
 
+	/** 그 사용자의 세션 행을 모두 지운다. 탈퇴가 `WITHDRAWN`으로 무효화한 뒤에 부른다 (ERD 4.3) */
+	@Modifying(flushAutomatically = true)
+	@Query("delete from AuthSession s where s.userId = :userId")
+	fun deleteAllOfUser(@Param("userId") userId: UUID): Int
+
 	/**
 	 * 유효한 세션의 수 (`revoked_at IS NULL AND expires_at > now`, ERD DB-14).
 	 * 단위 6의 푸시 판단(R-16)이 0보다 큰지 본다.

@@ -4,6 +4,7 @@ import com.duriseo.server.TestcontainersConfig
 import com.duriseo.server.auth.application.LoginService
 import com.duriseo.server.support.IntegrationTestSupport
 import com.duriseo.server.support.TestClockConfig
+import com.duriseo.server.user.domain.SocialProvider
 import com.duriseo.server.user.application.UserService
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -117,8 +118,9 @@ class LogoutTest : IntegrationTestSupport() {
 		val guest = startGuest()
 		logout(guest.accessToken).expectError(403, "GUEST_NOT_ALLOWED")
 
-		// 게스트 연동(2부)이 계정을 MEMBER로 바꾼다. access 토큰에는 계정 종류가 없으므로 같은 토큰으로 바로 통과한다
-		makeMember(guest.userId)
+		// 게스트 연동(POST /auth/link)이 계정을 MEMBER로 바꾼다. access 토큰에는 계정 종류가 없으므로 같은 토큰으로 바로 통과한다
+		registerSocial(SocialProvider.GOOGLE, "fake-google-token", "fake-google-sub-1", "홍길동")
+		link(guest.accessToken, "GOOGLE", "fake-google-token").andExpect(status().isNoContent)
 
 		logout(guest.accessToken).andExpect(status().isNoContent)
 	}
