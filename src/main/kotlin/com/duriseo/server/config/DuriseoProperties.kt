@@ -8,10 +8,19 @@ import org.springframework.boot.context.properties.ConfigurationProperties
  */
 @ConfigurationProperties(prefix = "duriseo")
 data class DuriseoProperties(
+	val jwt: Jwt = Jwt(),
 	val google: Google = Google(),
 	val kakao: Kakao = Kakao(),
 	val firebase: Firebase = Firebase(),
 ) {
+	/**
+	 * access 토큰(HS256) 서명 키. 문자열을 UTF-8 바이트 그대로 키로 쓴다 (hex 디코드하지 않음).
+	 * 32바이트 이상이어야 한다. 로그에 찍히지 않도록 toString에서 값을 가린다.
+	 */
+	data class Jwt(val secret: String = "") {
+		override fun toString(): String = "Jwt(secret=***)"
+	}
+
 	/** ID 토큰의 aud가 이 값인지 확인한다 (API.md 4.2, NFR-SEC-01) */
 	data class Google(val webClientId: String = "")
 

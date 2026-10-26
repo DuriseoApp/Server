@@ -283,6 +283,19 @@ AC 하나에 테스트 하나 이상 (CONVENTIONS). "앱 동작"은 서버 API�
 - 같은 소셜 계정의 첫 로그인이 동시에 두 번 오면 `uq_social_accounts_provider_user` 위반이 난다. 이때는 이미 생긴 회원으로 로그인 처리한다 (500을 내지 않음).
 - Kakao 연결 끊기는 커밋 뒤(`@TransactionalEventListener(AFTER_COMMIT)`) 연결 2초·응답 3초 제한으로 부르고, 실패는 키·토큰 없이 로그만 남긴다.
 
+구현 1부에서 정한 것:
+
+- `JWT_SECRET`은 문자열을 UTF-8 바이트 그대로 HS256 키로 쓴다 (hex 디코드 안 함). 배포 스크립트가 만드는 `openssl rand -hex 32`는 64자라 64바이트 키가 된다. 32바이트 미만이면 `AccessTokenCodec` 생성에서 실패해 서버가 시작하지 않는다.
+- `SpaceAccessPolicy`는 `common`이 도메인에 의존하지 않도록 엔티티·리포지토리 대신 `EntityManager` 네이티브 쿼리(`users`, `space_members`, `spaces`)로 읽는다. 계정 종류는 요청마다 `users.account_type`에서 읽는다.
+- 인증 인터셉터는 컨트롤러 메서드(`HandlerMethod`)가 있는 `/api/v1/**` 경로에만 적용한다. 없는 경로는 인증 없이 기존대로 404 `NOT_FOUND`다. 공개 경로는 `AuthWebConfig.PUBLIC_PATHS`.
+- 세션이 `REPLACED`이면 만료 시각과 관계없이(행이 남아 있는 한) `SESSION_REPLACED`를 준다. `revoked_at`이 없고 `expires_at`이 지났으면 `SESSION_INVALID` (access 경로·refresh 경로 모두).
+- `POST /auth/refresh`에서 `refreshToken`이 없거나 비면 400 `VALIDATION_FAILED`(`refreshToken`, `REQUIRED`)로 한다 (Docs는 이 경우를 정하지 않았고 1.1의 "필수값 누락" 규칙을 따랐다).
+- `PUT /me/devices`는 `INSERT … ON CONFLICT (fcm_token) DO UPDATE` 한 문장으로 처리해 같은 토큰의 겹친 요청이 유일 제약 오류(500)가 되지 않게 한다. 그 사용자의 다른 FCM 토큰 행은 지우지 않는다 (Docs에 없음).
+- `LoginService.login`·`cleanUpPreviousSessionsAndDevices`·`startSession`은 `Propagation.MANDATORY`다. 사용자 생성·정리·새 세션이 한 트랜잭션이어야 해서, 2부의 `/auth/social`·`/auth/switch` 서비스가 트랜잭션을 열고 부른다.
+- `UserService.createMember(socialName)`은 2부 신규 가입이 쓸 자리다 (닉네임은 `Nicknames.fromSocialName`).
+- `PATCH /me`는 "필드 없음"과 `null`을 구분해야 해서 본문을 `Map`으로 받아 `UpdateMeRequest.parse`에서 검사한다. 시간대는 `ZoneId.getAvailableZoneIds()`에 있는 이름만 허용한다 (`+09:00`, `UTC+9` 같은 오프셋 표기는 거부).
+- JVM 메서드 이름에는 `/`를 쓸 수 없어 테스트 이름의 `/auth/guest`, `PATCH /me` 등은 `auth 아래 guest`, `PATCH me`처럼 적었다.
+
 ## 리뷰 기록
 
 | 회차 | Critical | Major | 비고 |

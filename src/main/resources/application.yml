@@ -41,6 +41,8 @@ management:
         enabled: true
 
 duriseo:
+  jwt:
+    secret: ${JWT_SECRET:} # 비어 있거나 32바이트 미만이면 서버가 시작하지 않는다
   google:
     web-client-id: ${GOOGLE_WEB_CLIENT_ID:}
   kakao:
