@@ -28,6 +28,8 @@ dependencies {
 	implementation("org.flywaydb:flyway-database-postgresql")
 	implementation("org.jetbrains.kotlin:kotlin-reflect")
 	implementation("tools.jackson.module:jackson-module-kotlin")
+	// access 토큰(HS256) 발급·검증, 2부의 Google ID 토큰 검증. Jackson에 의존하지 않는다 (Boot 4의 Jackson 3와 충돌 없음)
+	implementation("com.nimbusds:nimbus-jose-jwt:10.0.2")
 	runtimeOnly("org.postgresql:postgresql")
 	testImplementation("org.springframework.boot:spring-boot-starter-data-jpa-test")
 	testImplementation("org.springframework.boot:spring-boot-starter-flyway-test")

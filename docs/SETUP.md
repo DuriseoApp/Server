@@ -26,7 +26,7 @@
 | `KAKAO_ADMIN_KEY` | **비밀** | 카카오 어드민 키. 탈퇴 시 연결 끊기 |
 | `FIREBASE_PROJECT_ID` | 공개 설정 | Firebase 프로젝트 ID |
 | `FIREBASE_CREDENTIALS_BASE64` | **비밀** | 서비스 계정 키 JSON을 base64로 (`base64 -i key.json \| tr -d '\n'`) |
-| `JWT_SECRET` | **비밀** | 토큰 서명 키. AWS 서버는 배포 스크립트가 환경마다 만들어 넣어요. 앱 코드에서는 단위 1(계정)에서 읽기 시작해요 |
+| `JWT_SECRET` | **비밀** | 토큰 서명 키. AWS 서버는 배포 스크립트가 환경마다 만들어 넣어요(`openssl rand -hex 32`, 64자). 앱은 문자열을 UTF-8 그대로 키로 쓰고, 32바이트 미만이거나 비어 있으면 시작하지 않아요 |
 
 새 환경변수를 만들면 `.env.example`, 이 표, `application.yml`, `deploy/bin/deploy.sh`를 같은 PR에서 함께 고쳐요.
 
