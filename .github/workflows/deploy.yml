@@ -133,7 +133,14 @@ jobs:
         run: |
           aws ecr get-login-password | docker login --username AWS --password-stdin "${IMAGE%%/*}"
           docker build --label "org.opencontainers.image.revision=$SHA" --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" -t "$IMAGE" .
-          docker push "$IMAGE"
+          # 같은 커밋의 배포가 동시에 돌면 다른 실행이 먼저 올렸을 수 있다 (태그는 덮어쓸 수 없음).
+          # 그 경우 이미 올라간 같은 커밋 이미지를 쓰면 되므로 실패로 보지 않는다
+          if ! docker push "$IMAGE"; then
+            repo_name="${IMAGE#*/}"; repo_name="${repo_name%%:*}"
+            aws ecr describe-images --repository-name "$repo_name" --image-ids imageTag="$SHA" >/dev/null 2>&1 \
+              || { echo "::error::이미지 올리기 실패"; exit 1; }
+            echo "::notice::같은 커밋 이미지가 이미 올라가 있어 그것을 써요"
+          fi
 
   deploy:
     name: 서버에 배포
