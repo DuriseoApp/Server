@@ -181,6 +181,18 @@ abstract class IntegrationTestSupport {
 			patch("$API/space/colors").header("Authorization", "Bearer $accessToken").contentType(MediaType.APPLICATION_JSON).content(json),
 		)
 
+	/** `POST /couple/import` 본문을 그대로 보낸다. [json]이 null이면 본문 없이 보낸다 */
+	protected fun importCoupleRaw(accessToken: String, json: String?): ResultActions {
+		val request = post("$API/couple/import").header("Authorization", "Bearer $accessToken")
+		return mockMvc.perform(if (json == null) request else request.contentType(MediaType.APPLICATION_JSON).content(json))
+	}
+
+	protected fun importRecords(accessToken: String, withRecords: Boolean): ResultActions =
+		importCoupleRaw(accessToken, """{"import": $withRecords}""")
+
+	protected fun unlinkCouple(accessToken: String): ResultActions =
+		mockMvc.perform(delete("$API/couple").header("Authorization", "Bearer $accessToken"))
+
 	protected fun bodyOf(result: ResultActions): String = result.andReturn().response.getContentAsString(Charsets.UTF_8)
 
 	protected fun statusOf(result: ResultActions): Int = result.andReturn().response.status
@@ -365,6 +377,19 @@ abstract class IntegrationTestSupport {
 		)
 		return id
 	}
+
+	protected fun insertAnniversary(spaceId: UUID, authorId: UUID, name: String = "테스트 기념일"): UUID {
+		val id = UUID.randomUUID()
+		jdbc.update(
+			"insert into anniversaries (id, space_id, author_id, name, date, created_at, updated_at) values (?, ?, ?, ?, date '2026-10-27', ?, ?)",
+			id, spaceId, authorId, name, ts(clock.instant()), ts(clock.instant()),
+		)
+		return id
+	}
+
+	/** 사용자의 활성 공간 ID (`left_at`이 없는 소속의 공간) */
+	protected fun activeSpaceIdOfUser(userId: UUID): UUID =
+		jdbc.queryForObject("select space_id from space_members where user_id = ? and left_at is null", UUID::class.java, userId)!!
 
 	protected fun insertMemoFavorite(memoId: UUID, userId: UUID) {
 		jdbc.update("insert into memo_favorites (memo_id, user_id, created_at) values (?, ?, ?)", memoId, userId, ts(clock.instant()))

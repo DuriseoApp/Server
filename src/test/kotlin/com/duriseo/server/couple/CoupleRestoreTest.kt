@@ -19,7 +19,8 @@ import kotlin.test.assertNotEquals
 
 /**
  * 유예 기간 안의 이전 커플 공간 복구 (FR-COUPLE-06, API.md 4.4 4단계, ERD 4.2).
- * 연결 해제(`DELETE /couple`)는 구현 2부라서, 해제된 공간은 해제 뒤 상태(UNLINKED, 두 소속에 left_at)로 직접 만든다.
+ * 해제된 공간은 해제 뒤 상태(UNLINKED, 두 소속에 left_at)를 DB에 직접 만들어 둔다. `DELETE /couple`로 해제한 뒤 다시 연결하는 흐름은
+ * `CoupleUnlinkTest`가 본다.
  */
 @SpringBootTest
 @Import(TestcontainersConfig::class, TestClockConfig::class)

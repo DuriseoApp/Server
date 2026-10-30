@@ -77,6 +77,21 @@ class UserService(
 	fun lockForUpdate(userId: UUID): User =
 		checkNotNull(users.findByIdForUpdate(userId)) { "user to lock is missing" }
 
+	/**
+	 * 사용자 행과 커플 상대의 행을 **UUID 오름차순**으로 잠그고(SELECT … FOR UPDATE) 사용자를 돌려준다. 연결 해제와 탈퇴가 쓴다.
+	 * 두 사람이 한 커플 공간을 해제·탈퇴하는 흐름은 모두 사용자 둘을 같은 순서로 잠근 뒤에 공간 행을 잠가야 한다:
+	 * 한쪽이 공간 행을 먼저 잡고 상대 알림·개인 공간 소속을 넣으면(외래 키 검사가 상대 행에 `FOR KEY SHARE`를 요구) 상대 행을
+	 * 잡은 쪽과 교착한다 (잠금 순서 users → invite_codes → spaces).
+	 * 상대는 잠금 없이 먼저 읽는다. 그 사이 커플이 바뀌었으면 새 상대도 이어서 잠근다.
+	 */
+	@Transactional(propagation = Propagation.MANDATORY)
+	fun lockForUpdateWithPartner(userId: UUID): User {
+		val locked = mutableMapOf<UUID, User>()
+		listOfNotNull(userId, spaceService.activePartnerIdOf(userId)).sorted().forEach { locked[it] = lockForUpdate(it) }
+		spaceService.activePartnerIdOf(userId)?.takeIf { it !in locked }?.let { locked[it] = lockForUpdate(it) }
+		return locked.getValue(userId)
+	}
+
 	/** 공간 구성원 목록이 보여 줄 닉네임·프로필 사진 여부 (`GET /space`, API.md 3.2 `SpaceMember`). 없는 ID는 결과에 없다 */
 	@Transactional(readOnly = true)
 	fun profilesOf(userIds: Collection<UUID>): Map<UUID, UserProfile> =

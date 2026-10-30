@@ -109,3 +109,32 @@ shred -u /tmp/restore.dump
 | AWS 배포 권한 | 없음. GitHub Actions가 OIDC로 그때그때 임시 권한을 받아요 (`AWS_DEPLOY_ROLE_ARN`은 비밀이 아닌 역할 이름) |
 
 배포 스크립트는 비밀값을 출력하지 않아요. 비밀값이 로그나 GitHub에 보이면 그 값을 바로 폐기하고 새로 만들어요.
+
+## 9. 처리하지 못한 Kakao 해제 알림
+
+사용자가 Kakao 계정 설정에서 둘이서 연결을 끊으면 Kakao가 서버의 `/api/v1/webhooks/kakao/unlink`를 불러요 (Kakao만 쓰던 회원은 탈퇴 처리, Google도 쓰면 Kakao 로그인만 해제). 서버는 처리 중 오류가 나도 **Kakao에는 항상 200**으로 답해요 (200이 아니면 Kakao가 웹훅을 꺼 버릴 수 있어요). 그래서 처리하지 못한 알림은 Kakao가 다시 보내 주지 않고, 로그에만 남아요. 운영자가 찾아서 처리해요.
+
+**찾기**: 앱 로그에서 ERROR 줄을 찾아요 (3장).
+
+```bash
+docker logs duriseo-prod-app-1 2>&1 | grep "Kakao unlink notice was not processed"
+# Kakao unlink notice was not processed: user_id=<Kakao 회원번호> referrer_type=<값> traceId=<traceId>
+```
+
+- `user_id`는 Kakao 회원번호, `referrer_type`은 연결을 끊은 경로(`ACCOUNT_DELETE`, `UNLINK_FROM_APPS` 등)예요. 어느 값이든 처리는 같아요.
+- 같은 `traceId`로 `grep <traceId>`하면 줄 바로 아래에 오류 원인(예외와 스택)이 있어요. 트랜잭션은 롤백돼서 사용자 데이터는 알림이 오기 전 그대로예요.
+- 인증 실패(401 `WEBHOOK_UNAUTHORIZED`)는 이 ERROR와 달라요. Kakao 개발자 콘솔에 등록한 어드민 키·앱 ID가 서버 설정(`KAKAO_ADMIN_KEY`, `KAKAO_APP_ID`)과 다르면 모든 알림이 401이 돼요. 서버 설정에 어드민 키가 비어 있어도 마찬가지예요.
+
+**다시 처리하기**: 원인을 고친 뒤 같은 알림을 서버에 다시 보내요. 같은 알림이 여러 번 와도 결과가 같아서(이미 처리했거나 모르는 사용자면 아무것도 안 해요) 안전해요. 어드민 키가 화면과 셸 기록에 남지 않게 컨테이너 안의 환경변수를 써요.
+
+```bash
+docker exec duriseo-prod-app-1 sh -c 'curl -s -o /dev/null -w "%{http_code}\n" -X POST \
+  http://localhost:8080/api/v1/webhooks/kakao/unlink \
+  -H "Authorization: KakaoAK $KAKAO_ADMIN_KEY" \
+  -d "app_id=$KAKAO_APP_ID" -d "user_id=<로그의 Kakao 회원번호>" -d "referrer_type=<로그의 값>"'
+```
+
+`200`이 나와도 처리 결과는 로그로 확인해요. 같은 ERROR가 또 나오면 원인이 아직 남아 있는 거예요. 사용자의 기기는 탈퇴 처리가 끝나면 다음 요청에서 401 `SESSION_INVALID`를 받아 시작 화면으로 돌아가요.
+
+**등록**: Kakao Developers의 앱 › 웹훅 › 연결 해제 웹훅에 `https://<서버 주소>/api/v1/webhooks/kakao/unlink`를 등록하는 것은 사람이 할 일이에요 (서버를 배포한 뒤). 운영 도메인과 개발 도메인을 각각 등록해요.
+

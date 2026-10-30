@@ -1,6 +1,7 @@
 package com.duriseo.server.support
 
 import com.duriseo.server.couple.application.CoupleLinked
+import com.duriseo.server.couple.application.CoupleUnlinked
 import com.duriseo.server.couple.application.InviteCodeGenerator
 import com.duriseo.server.couple.application.RandomInviteCodeGenerator
 import org.springframework.boot.test.context.TestConfiguration
@@ -39,25 +40,38 @@ class ScriptedInviteCodeGenerator(private val fallback: InviteCodeGenerator) : I
 }
 
 /**
- * 커밋 뒤에 전달된 `CoupleLinked`를 모은다. [onLinked]는 전달되는 순간 실행한다: 그때 다른 연결에서 커밋된 값이 보이는지로
- * "커밋 뒤에만 전달된다"를 확인한다. 롤백된 트랜잭션의 이벤트는 오지 않는다.
+ * 커밋 뒤에 전달된 `CoupleLinked`·`CoupleUnlinked`를 모은다. [onLinked]·[onUnlinked]는 전달되는 순간 실행한다: 그때 다른 연결에서
+ * 커밋된 값이 보이는지로 "커밋 뒤에만 전달된다"를 확인한다. 롤백된 트랜잭션의 이벤트는 오지 않는다.
  */
 class CoupleEventRecorder {
 
 	val linked = CopyOnWriteArrayList<CoupleLinked>()
 
+	val unlinked = CopyOnWriteArrayList<CoupleUnlinked>()
+
 	@Volatile
 	var onLinked: ((CoupleLinked) -> Unit)? = null
 
+	@Volatile
+	var onUnlinked: ((CoupleUnlinked) -> Unit)? = null
+
 	fun reset() {
 		linked.clear()
+		unlinked.clear()
 		onLinked = null
+		onUnlinked = null
 	}
 
 	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
 	fun record(event: CoupleLinked) {
 		onLinked?.invoke(event)
 		linked.add(event)
+	}
+
+	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+	fun record(event: CoupleUnlinked) {
+		onUnlinked?.invoke(event)
+		unlinked.add(event)
 	}
 }
 

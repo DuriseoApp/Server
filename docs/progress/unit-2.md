@@ -1,7 +1,7 @@
 # 단위 2: 커플 (couple)
 
-> 브랜치: `feat/2-couple` · PR: (링크) · 상태: 구현 1부 완료 (초대코드·연결·공간·색·`Me.createdAt`), 2부 대기 (`POST /couple/import`, `DELETE /couple`, R-18, 탈퇴 연결점, Kakao 웹훅, `WithdrawalDataEraser` 정리)
-> 기준: PRD v0.8 (FR-COUPLE-01~06, FR-CAL-04, FR-AUTH-06 AC2, NFR-SEC-02·03, D-05~08, D-36, D-37, D-42, D-45, D-47~49, D-53, D-61, D-72, D-74, D-76, D-78, D-83~85), API.md 1장·1.1·2장(R-01·R-08·R-09·R-15·R-18)·3.2·4.4·4.5·4.6·5장·6장·7장, ERD 3.1(notifications)·3.2·4.1·4.2·4.3·4.5·5장(DB-03·04·05·07·08·13·16)
+> 브랜치: `feat/2-couple` · PR: (링크) · 상태: 리뷰 중 (구현 1부·2부 완료. 1부: 초대코드·연결·공간·색·`Me.createdAt`, 2부: `POST /couple/import`, `DELETE /couple`, R-18, 탈퇴 연결점, Kakao 연결 해제 웹훅, `WithdrawalDataEraser` 정리)
+> 기준: PRD v0.8 (FR-COUPLE-01~06, FR-CAL-04, FR-AUTH-06 AC2·AC4, NFR-SEC-02·03, D-05~08, D-36, D-37, D-42, D-45, D-47~49, D-53, D-61, D-72, D-74, D-76, D-78, D-83~85, D-87), API.md 1장·1.1·2장(R-01·R-08·R-09·R-15·R-18)·3.2·3.6·4.4·4.5·4.6·4.8·5장·6장·7장, ERD 3.1(notifications)·3.2·4.1·4.2·4.3·4.5·5장(DB-03·04·05·07·08·13·15·16)
 > Docs 기준 커밋: DuriseoApp/Docs main `afc3d1b` (PRD v0.8, Docs PR #9 머지). 처음 범위를 잡을 때는 `b992123`(PRD v0.7)였다.
 
 ## 확인 필요 해결 (PRD v0.8, Docs PR #9)
@@ -161,6 +161,20 @@ AC 하나에 테스트 하나 이상 (CONVENTIONS). "앱 동작"은 서버 API�
 | FR-AUTH-07 AC2 | 닉네임을 바꾸면 상대 화면에도 (단위 1이 남긴 `GET /space` 쪽) | `FR-AUTH-07 AC2 닉네임을 바꾸면 상대의 GET space 구성원 닉네임에 반영된다` |
 | FR-SET-01 AC1 | 커플(연결 상태, 상대 닉네임, 처음 만난 날) | `FR-SET-01 GET space는 구성원의 ID·닉네임·색·프로필 사진 여부와 처음 만난 날·함께 색을 돌려준다` (모양은 확인 필요 2. D-57 메모 작성자 닉네임도 이 값) |
 
+**FR-AUTH-06 AC4 Kakao 연결 해제 알림 웹훅** (D-87, DB-15, API.md 3.6·4.8; 구현 2부에서 범위에 더함)
+
+| 내용 | 테스트 (`KakaoWebhookTest`, 인증 비교는 `KakaoWebhookAuthenticatorTest`) |
+| --- | --- |
+| Kakao만 쓰는 회원 → 탈퇴, 200 빈 본문, 연결 끊기 호출 없음 | `FR-AUTH-06 AC4 Kakao만 쓰는 회원에게 연결 해제 알림이 오면 탈퇴 처리하고 200 빈 본문을 돌려준다` |
+| GET·POST 둘 다, access 토큰 없음 | `FR-AUTH-06 AC4 GET으로 와도 같게 처리한다 (쿼리 문자열)`, `FR-AUTH-06 AC4 access 토큰 없이 어드민 키만으로 부를 수 있다` |
+| Google도 쓰면 `KAKAO` 행만 삭제 | `FR-AUTH-06 AC4 Google도 쓰는 회원이면 KAKAO 행만 지우고 세션·기기·데이터는 그대로다` |
+| 커플이면 탈퇴 전용 해제 알림·`purge_at` +90일 | `FR-AUTH-06 AC4 커플 회원이면 연결 해제와 상대의 탈퇴 전용 COUPLE_UNLINKED 알림과 purge_at +90일까지 탈퇴와 같다` |
+| `referrer_type`으로 나누지 않음 | `FR-AUTH-06 AC4 referrer_type 값과 관계없이 모두 같게 처리한다` |
+| 모르는 사용자·중복 알림·동시 중복은 멱등 | `FR-AUTH-06 AC4 모르는 사용자와 이미 처리한 알림은 200이고 아무것도 바꾸지 않는다`, `FR-AUTH-06 AC4 같은 알림이 동시에 두 번 와도 한 번만 처리하고 둘 다 200이다` |
+| `user_id` 없음·이상한 값은 200 | `FR-AUTH-06 AC4 user_id가 없거나 비어 있으면 200이고 아무것도 바꾸지 않고 경고 로그만 남긴다`, `FR-AUTH-06 AC4 user_id 형식이 이상해도 200이다` |
+| 인증 실패만 401 `WEBHOOK_UNAUTHORIZED`, 아무것도 안 바꿈, 키 로그 없음 | `FR-AUTH-06 AC4 어드민 키나 app_id가 틀리면 401 WEBHOOK_UNAUTHORIZED이고 아무것도 바꾸지 않는다`, `FR-AUTH-06 AC4 인증이 틀리면 user_id가 맞아도 처리하지 않는다 (Google도 쓰는 회원 포함)`, 인증기 단위 테스트 4개 |
+| 처리 중 오류는 롤백 + ERROR 로그(`user_id`·`referrer_type`·`traceId`, 키 없음) + 200 | `FR-AUTH-06 AC4 처리 중 오류가 나면 롤백하고 ERROR 로그에 user_id·referrer_type·traceId를 남기고도 200이다` |
+
 ### 2. 권한 규칙 (API.md 2장) — `SpaceAccessPolicy`
 
 R-09는 단위 1이 정책 컴포넌트 테스트까지 했다. 단위 2는 경로 테스트를 더한다. `DELETE /couple`("커플 구성원")과 `POST /couple/import`("가져오기 대기 중인 본인")는 R- 번호가 없다 (확인 필요 9).
@@ -249,10 +263,10 @@ ARCHITECTURE 4장: 두 사람이 동시에 움직이는 흐름은 `SELECT … FO
 | --- | --- | --- |
 | `POST /invite-codes` | 요청자 users 행 → (잠금 뒤 R-09·60초 다시 확인) → 이전 코드 `revoked_at` → 새 코드 | 같은 사용자의 겹친 생성(두 번째는 429), 생성과 상대의 입력이 겹침 |
 | `POST /couple/join` | 코드를 잠금 없이 찾아 만든 사람 A를 안다 → users A·B를 UUID 순서로 잠금 → 코드 행 `FOR UPDATE`로 다시 읽어 검사 → (복구면) 이전 UNLINKED 공간 행 잠금 | 같은 코드 동시 입력(두 번째 `INVITE_USED`), A가 다른 코드로 연결 중(`INVITE_UNAVAILABLE`), 재요청과 입력이 겹침. 코드 먼저 잠그고 사용자를 잠그면 재요청(사용자 → 코드)과 교착한다 |
-| `DELETE /couple` | 활성 커플 공간 행 `FOR UPDATE` → 잠금 뒤 다시 확인 | 둘의 동시 해제, 해제와 가져오기·탈퇴 해제가 겹침 |
-| `POST /couple/import` | 요청자의 활성 커플 공간 행 `FOR UPDATE` → 대기 공간 확인 | 가져오기와 해제(D-78)가 겹침 |
+| `DELETE /couple` | 요청자·상대 users 행을 UUID 오름차순으로 → 활성 커플 공간 행 `FOR UPDATE` → 잠금 뒤 R-18 다시 확인 | 둘의 동시 해제(두 번째는 사용자 행 잠금 뒤 개인 공간을 보고 `NOT_COUPLE`), 해제와 가져오기·탈퇴 해제가 겹침 |
+| `POST /couple/import` | 요청자의 활성 커플 공간 행 `FOR UPDATE`(사용자 행은 잠그지 않음) → 대기 공간 확인 | 가져오기와 해제(D-78)가 겹침 |
 | `PATCH /space`, `/space/colors` | 활성 공간 행 `FOR UPDATE` | 해제와 겹친 변경. 둘의 동시 변경은 마지막 저장이 이김 (NFR-SYNC-03) |
-| `DELETE /me` (커플) | 단위 1대로 본인 users 행 → 커플 공간 행 | 탈퇴와 상대 해제가 겹침. 상대 users 행은 잠그지 않는다 |
+| `DELETE /me` (커플), Kakao 웹훅 탈퇴 | **본인과 상대 users 행을 UUID 오름차순으로** → 커플 공간 행 | 탈퇴와 상대 해제가 겹침. 처음 계획("상대 users 행은 잠그지 않는다")은 틀렸다: 해제가 공간 행을 먼저 잡고 상대의 알림·개인 공간 소속을 넣으면 외래 키 검사가 상대 users 행에 `FOR KEY SHARE`를 요구하는데, 그 행을 `FOR UPDATE`로 잡은 상대의 탈퇴가 공간 행을 기다려 교착한다 |
 
 그 밖의 구현 위험:
 
@@ -261,7 +275,7 @@ ARCHITECTURE 4장: 두 사람이 동시에 움직이는 흐름은 `SELECT … FO
 3. **실패 시도 기록과 롤백.** 거부는 `ApiException`이라 트랜잭션이 롤백되므로 실패 시도 INSERT도 사라진다. 시도 기록은 별도 트랜잭션(`REQUIRES_NEW`)에 넣는다. 이때 바깥 트랜잭션이 잡은 users 행 잠금과 겹치지 않는지(시도 테이블은 users를 잠그지 않음) 확인한다.
 4. **오입력 횟수 경쟁.** 같은 사용자의 입력이 동시에 오면 9회 상태에서 둘 다 통과할 수 있다. 요청자 users 행을 잠근 뒤 횟수를 세면 순서가 정해진다.
 
-## 단위 1 연결점 (완성할 것)
+## 단위 1 연결점 (2부에서 모두 완성함)
 
 | 연결점 | 지금 | 단위 2에서 |
 | --- | --- | --- |
@@ -324,6 +338,16 @@ API 7장: "모든 알림 작업은 받는 사람마다 `notifications` 행을 **
 - 콘텐츠 개수 확인은 `couple/application/CoupleContentGateway`가 `events`, `anniversaries`, `memos`를 네이티브 SQL로 센다(단위 3·4·5가 도메인 서비스로 옮긴다).
 - `GET /space`의 구성원 닉네임은 `SpaceDetailService`(space)가 `UserService.profilesOf`(user)로 읽는다. 순환 의존을 피하려고 `SpaceService`는 user를 모르고 `MeService`·`SpaceDetailService`가 둘을 조합한다.
 
+구현 2부에서 정한 것 (리드 지시와 Docs v0.8 기준, 문서에 없는 구현 결정):
+
+- **해제·탈퇴 해제의 잠금은 users(UUID 순서, 본인+상대) → 공간이다.** 위 5장 표의 이유 참고. `UserService.lockForUpdateWithPartner`가 상대를 잠금 없이 먼저 읽어 둘을 UUID 순서로 잠그고, 잠근 뒤 상대가 바뀌었으면 새 상대도 이어서 잠근다(그 사이 연결된 드문 경우, 순서는 지키지 못할 수 있다). `WithdrawalService.eraseInTransaction`과 `CoupleUnlinkService.unlink`, Kakao 웹훅이 모두 이것으로 시작한다.
+- **`CoupleUnlinkService`(couple)가 `DELETE /couple`과 탈퇴 해제를 한 코드로 한다.** 닉네임은 `unlink`에서는 잠근 사용자 엔티티에서, 탈퇴에서는 `WithdrawalService`가 익명화 전에 읽은 값을 넘긴다. 탈퇴하는 사람에게는 새 개인 공간을 만들지 않는다. 해제 이벤트 `CoupleUnlinked(spaceId, unlinkedByUserId, partnerUserId, byWithdrawal, notificationId)`를 해제 트랜잭션 안에서 발행한다(탈퇴 해제도 `byWithdrawal = true`로 발행하고 `UserWithdrawn.partnerUserId`도 채운다. 단위 6은 한쪽에서만 보내 상대에게 신호가 두 번 가지 않게 한다).
+- **영속성 컨텍스트:** 해제의 일괄 UPDATE/DELETE는 `clearAutomatically`를 쓴다. 그래서 `WithdrawalService.eraseInTransaction`은 알림·초대코드 삭제 뒤 같은 잠금을 다시 잡아(`lockForUpdate`) 새로 읽은 사용자 엔티티를 익명화한다.
+- **`POST /couple/import`:** R-18(`SpaceAccessPolicy.requireImportPending`: 활성 공간이 `COUPLE`이고 소속에 `left_at`이 있는 PERSONAL 공간이 있을 것)을 잠그기 전에 한 번, 커플 공간 행을 잠근 뒤 한 번 더 부른다. `import` 검사(400)는 첫 R-18 뒤다. 불리언이 아닌 `import`는 `VALIDATION_FAILED`(`import`, `INVALID`) (Docs가 정하지 않은 모양, 1부의 `code`와 같은 판단). 기록 이동은 `CoupleContentGateway`의 네이티브 SQL(`space_id`만 바꾼다)이고 단위 3·4·5가 도메인 서비스로 옮긴다.
+- **Kakao 웹훅:** 인증은 `KakaoWebhookAuthenticator`(헤더와 `app_id` 상수 시간 비교, 하나가 틀려도 둘 다 비교, 설정이 비면 모두 거부)가 하고 틀리면 `ApiException(WEBHOOK_UNAUTHORIZED)`다. 그 뒤 컨트롤러는 모든 예외를 잡아 ERROR 로그(`user_id`, `referrer_type`, `traceId`, 로그 위조를 막으려고 제어 문자를 지우고 64자로 자름)를 남기고 200 빈 본문으로 답한다. 값은 `getParameter`로 읽어 GET 쿼리와 POST 폼을 같이 받고 읽기에 실패하면 값 없음으로 본다. `user_id`가 없거나 비면 경고 로그만 남기고 200. 처리는 `KakaoUnlinkWebhookService`(찾기 → `TransactionTemplate` 안에서 사용자·상대 잠금 → 잠근 뒤 `deleted_at`·Kakao 행 확인 → `KAKAO` 밖 수단이 있으면 `KAKAO` 행만, 없으면 `WithdrawalService.eraseInTransaction(userId, unlinkFromKakao = false)`).
+- **`WithdrawalDataEraser`:** `notifications`는 `NotificationService.deleteAllOf`, 유효한 `invite_codes`는 `InviteCodeService.deleteValidOf`로 옮겼다. `social_accounts`, `notification_settings`, `memo_favorites`, `event_reminders`는 그대로 직접 지운다(앞의 둘은 user 도메인이지만 이 클래스가 한 곳에서 지우는 방식을 유지, 뒤의 둘은 단위 5·3이 옮긴다).
+- 테스트의 Kakao 앱 ID·어드민 키는 `src/test/resources/application.properties`의 가짜 값이다.
+
 ## 리뷰 기록
 
 | 회차 | Critical | Major | 비고 |
@@ -331,10 +355,10 @@ API 7장: "모든 알림 작업은 받는 사람마다 `notifications` 행을 **
 
 ## 남은 일
 
-- **구현 2부**: `POST /couple/import`(204, R-18 `NO_IMPORT_PENDING`, `import` 누락 400), `DELETE /couple`(204, R-18 `NOT_COUPLE`, 4.5 해제·알림·D-45 삭제·D-78 되살리기), 탈퇴 연결점 `WithdrawalService.unlinkCoupleBeforeWithdrawal`(+ `WithdrawalTest`의 500 테스트 교체), Kakao 웹훅 `/webhooks/kakao/unlink`, `WithdrawalDataEraser`의 `invite_codes`·`notifications` 삭제를 couple·notification 서비스로 옮기기. 1부가 만든 `SpaceAccessPolicy.requireCoupleSpace`는 R-18에도 그대로 쓴다
-- 사용자: CI 결과 확인 (이 환경은 Gradle을 못 돌려 컴파일·테스트를 CI가 처음 돌린다)
-- 단위 3·4·5: 단위 2의 콘텐츠 네이티브 SQL(개수 확인, `space_id` 이동, `event_reminders` 삭제)을 각 도메인 서비스로 옮기기
-- 단위 6: `CoupleLinked`·`CoupleUnlinked`·`SpaceUpdated`·`UserWithdrawn`을 듣는 푸시·SYNC(`LINKED` 포함), `purge_at`·초대코드·시도 정리 작업
+- 사용자: CI 결과 확인 (이 환경은 Gradle을 못 돌려 2부 컴파일·테스트는 CI가 처음 돌린다. 1부는 CI 초록, 테스트 312개 통과)
+- 사용자: Kakao Developers 앱 › 웹훅 › 연결 해제 웹훅에 서버 주소를 등록 (서버 배포 뒤, 사람이 할 일, `docs/DEPLOY.md` 9장). 서버 설정의 `KAKAO_ADMIN_KEY`가 비어 있으면 웹훅은 모두 401이다
+- 단위 3·4·5: 단위 2의 콘텐츠 네이티브 SQL(개수 확인, `space_id` 이동, `event_reminders` 삭제)을 각 도메인 서비스로 옮기기. 단위 5·3: `WithdrawalDataEraser`의 `memo_favorites`·`event_reminders` 삭제를 옮기기
+- 단위 6: `CoupleLinked`·`CoupleUnlinked`·`SpaceUpdated`·`UserWithdrawn`을 듣는 푸시·SYNC(`LINKED`·`UNLINKED` 포함), `purge_at`·초대코드·시도 정리 작업. 탈퇴 해제는 `CoupleUnlinked`(`byWithdrawal`)와 `UserWithdrawn.partnerUserId` 두 곳에 담겨 있으니 한쪽에서만 보낸다
 - Android: 초대코드·연결·가져오기·해제·공간 응답 모양은 API.md 3.2, 오류 우선순위·`retryAfterSeconds`는 4.4
 
 ## 확인 필요 (모두 해결됨 — 위 "확인 필요 해결" 절)

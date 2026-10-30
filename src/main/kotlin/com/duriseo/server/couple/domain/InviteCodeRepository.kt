@@ -57,4 +57,9 @@ interface InviteCodeRepository : JpaRepository<InviteCode, UUID> {
 			"where c.creatorUserId in :userIds and c.usedAt is null and c.revokedAt is null",
 	)
 	fun revokeValidOfUsers(@Param("userIds") userIds: Collection<UUID>, @Param("now") now: Instant): Int
+
+	/** 그 사용자의 유효한 코드(사용되지 않았고 무효화되지 않은 코드, 만료돼도 포함)를 지운다 (탈퇴 익명화, ERD 4.3 4단계). 지운 행 수를 돌려준다 */
+	@Modifying(flushAutomatically = true, clearAutomatically = true)
+	@Query("delete from InviteCode c where c.creatorUserId = :userId and c.usedAt is null and c.revokedAt is null")
+	fun deleteValidOf(@Param("userId") userId: UUID): Int
 }

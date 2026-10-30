@@ -5,6 +5,7 @@ import com.duriseo.server.auth.application.social.KakaoUnavailableException
 import com.duriseo.server.support.IntegrationTestSupport
 import com.duriseo.server.support.LogCapture
 import com.duriseo.server.support.TestClockConfig
+import com.duriseo.server.support.Tokens
 import com.duriseo.server.user.application.UserWithdrawn
 import com.duriseo.server.user.domain.SocialProvider
 import org.junit.jupiter.api.Test
@@ -13,6 +14,7 @@ import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
 import org.springframework.test.context.event.ApplicationEvents
 import org.springframework.test.context.event.RecordApplicationEvents
+import org.hamcrest.Matchers.nullValue
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
@@ -25,9 +27,9 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * 탈퇴 `DELETE /me` (API.md 4.6, ERD 4.3, FR-AUTH-06). 개인 공간 사용자(게스트 포함)의 탈퇴와
- * 해제가 필요 없는 데이터 단계(UNLINKED 커플 공간 `purge_at` +90일, 가져오기 대기 공간 삭제)를 확인한다.
- * 커플 공간 사용자의 연결 해제·`COUPLE_UNLINKED` 알림은 단위 2, 푸시·SYNC는 단위 6이다.
+ * 탈퇴 `DELETE /me` (API.md 4.6, ERD 4.3, FR-AUTH-06). 개인 공간 사용자(게스트 포함)의 탈퇴, 데이터 단계(UNLINKED 커플 공간
+ * `purge_at` +90일, 가져오기 대기 공간 삭제), 커플 공간 사용자의 탈퇴로 인한 연결 해제와 상대의 탈퇴 전용 `COUPLE_UNLINKED` 알림을 확인한다.
+ * 해제 알림의 푸시·SYNC는 단위 6이다. Kakao 연결 해제 알림 웹훅은 `KakaoWebhookTest`가 본다.
  */
 @SpringBootTest
 @Import(TestcontainersConfig::class, TestClockConfig::class)
@@ -245,7 +247,7 @@ class WithdrawalTest : IntegrationTestSupport() {
 		assertEquals("카카오닉", published[0].nicknameBeforeWithdrawal)
 		assertEquals("fake/profile.jpg", published[0].profileImageKey)
 		assertEquals("kakao-fake-id-1", published[0].kakaoProviderUserId)
-		// 커플 해제는 단위 2가 채울 때까지 상대가 없다
+		// 커플이 아니라 해제된 상대가 없다
 		assertNull(published[0].partnerUserId)
 	}
 
@@ -302,22 +304,179 @@ class WithdrawalTest : IntegrationTestSupport() {
 		assertEquals(later, instantOf("select purge_at from spaces where id = ?", coupleSpace))
 	}
 
-	@Test
-	fun `FR-AUTH-06 AC2 활성 커플 공간 사용자의 탈퇴는 연결 해제(단위 2)가 생기기 전까지 500이고 아무것도 바꾸지 않는다`() {
+	/** 커플 공간에 있는 회원(Google, 닉네임 "홍길동")과 상대("상대방"). 회원이 코드를 만들어 연결한다 */
+	private class Couple(val member: Tokens, val partner: Tokens, val spaceId: UUID)
+
+	private fun connectedCouple(): Couple {
 		registerGoogle()
 		val member = socialTokens("GOOGLE", "fake-google-token")
-		val partner = insertUser("MEMBER", "상대방")
-		// 연결된 상태: 개인 공간 소속은 left_at, 커플 공간 소속이 활성
-		jdbc.update("update space_members set left_at = ? where user_id = ?", ts(clock.instant()), member.userId)
-		val coupleSpace = insertSpace("COUPLE")
-		insertMember(coupleSpace, member.userId, "pick-orange")
-		insertMember(coupleSpace, partner, "pick-blue")
-		val before = accountSnapshot()
+		val partner = startMember("상대방")
+		return Couple(member, partner, connect(member, partner))
+	}
 
-		deleteMe(member.accessToken).expectError(500, "INTERNAL_ERROR")
+	private fun notificationRows(userId: UUID, type: String): List<Map<String, Any?>> =
+		jdbc.queryForList("select * from notifications where user_id = ? and type = ?", userId, type)
 
-		assertEquals(before, accountSnapshot())
-		getMe(member.accessToken).andExpect(status().isOk).andExpect(jsonPath("$.space.type").value("COUPLE"))
+	@Test
+	fun `FR-AUTH-06 AC2 활성 커플 공간 사용자가 탈퇴하면 연결이 해제되고 상대는 새 개인 공간으로 간다`() {
+		val couple = connectedCouple()
+		clock.advance(Duration.ofMinutes(10))
+
+		deleteMe(couple.member.accessToken).andExpect(status().isNoContent).andExpect(content().string(""))
+
+		assertEquals(1, count("select count(*) from spaces where id = ? and type = 'COUPLE' and status = 'UNLINKED'", couple.spaceId))
+		assertEquals(clock.instant(), instantOf("select unlinked_at from spaces where id = ?", couple.spaceId))
+		assertEquals(0, count("select count(*) from space_members where space_id = ? and left_at is null", couple.spaceId))
+		// 상대는 새 빈 개인 공간(주황)으로 간다
+		val partnerSpace = personalSpaceOf(couple.partner.userId)
+		assertNotEquals(couple.spaceId, partnerSpace)
+		assertEquals(1, count("select count(*) from spaces where id = ? and type = 'PERSONAL'", partnerSpace))
+		getMe(couple.partner.accessToken)
+			.andExpect(status().isOk)
+			.andExpect(jsonPath("$.space.type").value("PERSONAL"))
+			.andExpect(jsonPath("$.space.id").value(partnerSpace.toString()))
+			.andExpect(jsonPath("$.space.myColor").value("pick-orange"))
+			.andExpect(jsonPath("$.space.partner").value(nullValue()))
+			.andExpect(jsonPath("$.space.importPending").value(false))
+		assertEquals(1, withdrawnUserRow(couple.member.userId))
+	}
+
+	@Test
+	fun `FR-AUTH-06 AC2 탈퇴로 해제된 커플 공간의 purge_at은 탈퇴 시각 + 90일이다`() {
+		val couple = connectedCouple()
+		clock.advance(Duration.ofMinutes(10))
+
+		deleteMe(couple.member.accessToken).andExpect(status().isNoContent)
+
+		// 해제 +30일이 아니라 탈퇴 시각 + 90일로 늘어난다 (해제 뒤 단위 1의 연장이 돈다)
+		assertEquals(clock.instant().plus(Duration.ofDays(90)), instantOf("select purge_at from spaces where id = ?", couple.spaceId))
+		assertEquals(1, count("select count(*) from spaces where id = ?", couple.spaceId))
+	}
+
+	@Test
+	fun `FR-AUTH-06 AC2 탈퇴하면 상대에게 탈퇴 전용 COUPLE_UNLINKED 알림이 익명화 전 닉네임으로 생긴다`() {
+		val couple = connectedCouple()
+
+		deleteMe(couple.member.accessToken).andExpect(status().isNoContent)
+
+		val notification = notificationRows(couple.partner.userId, "COUPLE_UNLINKED").single()
+		assertEquals("홍길동님이 탈퇴해 연결이 해제됐어요", notification["title"])
+		assertEquals("함께 쓴 기록은 더 이상 볼 수 없어요", notification["body"])
+		// 복구 안내가 없다
+		assertFalse((notification["body"] as String).contains("30일"))
+		assertNull(notification["space_id"])
+		assertEquals("SETTINGS", notification["target_type"])
+		assertNull(notification["target_id"])
+		// 상대의 연결 알림은 남고, 탈퇴한 사용자가 받은 알림은 모두 지워진다
+		assertEquals(1, notificationRows(couple.partner.userId, "COUPLE_LINKED").size)
+		assertEquals(0, count("select count(*) from notifications where user_id = ?", couple.member.userId))
+	}
+
+	@Test
+	fun `FR-AUTH-06 AC2 탈퇴 이벤트의 partnerUserId는 상대 ID다`() {
+		val couple = connectedCouple()
+
+		deleteMe(couple.member.accessToken).andExpect(status().isNoContent)
+
+		val withdrawn = events.stream(UserWithdrawn::class.java).toList().single()
+		assertEquals(couple.member.userId, withdrawn.userId)
+		assertEquals(couple.partner.userId, withdrawn.partnerUserId)
+		assertEquals("홍길동", withdrawn.nicknameBeforeWithdrawal)
+		// 해제 이벤트도 탈퇴로 인한 해제로 커밋 뒤에 전달된다
+		val unlinked = coupleEvents.unlinked.single()
+		assertEquals(couple.spaceId, unlinked.spaceId)
+		assertEquals(couple.member.userId, unlinked.unlinkedByUserId)
+		assertEquals(couple.partner.userId, unlinked.partnerUserId)
+		assertTrue(unlinked.byWithdrawal)
+		assertEquals(notificationRows(couple.partner.userId, "COUPLE_UNLINKED").single()["id"], unlinked.notificationId)
+	}
+
+	@Test
+	fun `FR-AUTH-06 AC2 상대가 가져오기를 정하기 전에 탈퇴하면 남은 사람의 대기 공간이 되살아난다`() {
+		registerGoogle()
+		val member = socialTokens("GOOGLE", "fake-google-token")
+		val partner = startMember("상대방")
+		val pendingSpace = personalSpaceOf(partner.userId)
+		val partnerMemo = insertMemo(pendingSpace, partner.userId, "상대의 메모")
+		val coupleSpaceId = connect(member, partner)
+		getMe(partner.accessToken).andExpect(jsonPath("$.space.importPending").value(true))
+
+		deleteMe(member.accessToken).andExpect(status().isNoContent)
+
+		assertEquals(pendingSpace, personalSpaceOf(partner.userId))
+		assertNotEquals(coupleSpaceId, personalSpaceOf(partner.userId))
+		assertEquals(pendingSpace, jdbc.queryForObject("select space_id from memos where id = ?", UUID::class.java, partnerMemo))
+		getMe(partner.accessToken)
+			.andExpect(jsonPath("$.space.id").value(pendingSpace.toString()))
+			.andExpect(jsonPath("$.space.importPending").value(false))
+	}
+
+	@Test
+	fun `FR-AUTH-06 AC2 탈퇴한 사용자에게는 개인 공간이 남지 않는다`() {
+		registerGoogle()
+		val member = socialTokens("GOOGLE", "fake-google-token")
+		val partner = startMember("상대방")
+		// 탈퇴하는 사용자도 기록이 있어 개인 공간이 가져오기 대기로 남아 있다
+		val pendingSpaceOfMember = personalSpaceOf(member.userId)
+		insertMemo(pendingSpaceOfMember, member.userId, "내 메모")
+		val coupleSpaceId = connect(member, partner)
+
+		deleteMe(member.accessToken).andExpect(status().isNoContent)
+
+		assertEquals(0, count("select count(*) from spaces where id = ?", pendingSpaceOfMember))
+		assertEquals(0, count("select count(*) from memos where space_id = ?", pendingSpaceOfMember))
+		assertEquals(0, count("select count(*) from space_members where user_id = ? and left_at is null", member.userId))
+		// 남는 것은 보관 중인 커플 공간의 소속뿐이다
+		assertEquals(
+			listOf(coupleSpaceId),
+			jdbc.queryForList("select space_id from space_members where user_id = ?", UUID::class.java, member.userId),
+		)
+		assertEquals(0, count("select count(*) from spaces where type = 'PERSONAL' and id in (select space_id from space_members where user_id = ?)", member.userId))
+		// 상대에게는 새 개인 공간이 하나 생겼다
+		assertEquals(1, count("select count(*) from spaces where type = 'PERSONAL'"))
+	}
+
+	@Test
+	fun `FR-AUTH-06 AC2 탈퇴 도중 실패하면 커플 공간·상대·알림이 그대로다`() {
+		val couple = connectedCouple()
+		val before = accountSnapshot() + coupleSnapshot()
+
+		// 소셜 계정 행을 지우는 단계에서 DB가 실패한다. 앞 단계(해제, 새 개인 공간, 알림)까지 모두 되돌아가야 한다
+		withFailingTrigger("social_accounts", "delete") {
+			deleteMe(couple.member.accessToken).expectError(500, "INTERNAL_ERROR")
+		}
+
+		assertEquals(before, accountSnapshot() + coupleSnapshot())
+		assertTrue(coupleEvents.unlinked.isEmpty())
+		assertEquals(0, notificationRows(couple.partner.userId, "COUPLE_UNLINKED").size)
+		getMe(couple.member.accessToken).andExpect(status().isOk).andExpect(jsonPath("$.space.type").value("COUPLE"))
+		getMe(couple.partner.accessToken).andExpect(jsonPath("$.space.type").value("COUPLE"))
+	}
+
+	@Test
+	fun `FR-AUTH-06 AC2 탈퇴와 상대의 해제가 동시에 와도 교착 없이 한 번만 해제된다`() {
+		repeat(3) {
+			val a = startMember("에이")
+			val b = startMember("비비")
+			val spaceId = connect(a, b)
+
+			val (withdrawStatus, unlinkStatus) = inParallel(
+				listOf(
+					{ statusOf(deleteMe(a.accessToken)) },
+					{ statusOf(unlinkCouple(b.accessToken)) },
+				),
+			)
+
+			// 탈퇴는 언제나 성공한다. 해제는 탈퇴가 먼저면 이미 개인 공간이라 409다
+			assertEquals(204, withdrawStatus)
+			assertTrue(unlinkStatus == 204 || unlinkStatus == 409, "해제 응답이 $unlinkStatus 예요")
+			assertEquals(1, count("select count(*) from spaces where id = ? and status = 'UNLINKED'", spaceId))
+			assertEquals(1, withdrawnUserRow(a.userId))
+			assertEquals(1, count("select count(*) from space_members where user_id = ? and left_at is null", b.userId))
+			assertEquals(1, count("select count(*) from spaces s join space_members m on m.space_id = s.id where m.user_id = ? and m.left_at is null and s.type = 'PERSONAL'", b.userId))
+			// 탈퇴 때 +90일로 늘어난다 (해제가 먼저여도 탈퇴가 뒤에 늘린다)
+			assertEquals(clock.instant().plus(Duration.ofDays(90)), instantOf("select purge_at from spaces where id = ?", spaceId))
+		}
 	}
 
 	// ── FR-AUTH-06 AC3: Kakao 연결 끊기 ──────────────────

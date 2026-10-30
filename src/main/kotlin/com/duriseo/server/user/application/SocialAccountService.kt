@@ -35,4 +35,20 @@ class SocialAccountService(
 	@Transactional(readOnly = true)
 	fun kakaoProviderUserIdOf(userId: UUID): String? =
 		socialAccounts.findAllByUserId(userId).firstOrNull { it.provider == SocialProvider.KAKAO }?.providerUserId
+
+	/** 사용자가 쓰는 로그인 수단 */
+	@Transactional(readOnly = true)
+	fun providersOf(userId: UUID): Set<SocialProvider> = socialAccounts.findAllByUserId(userId).map { it.provider }.toSet()
+
+	/**
+	 * 사용자의 [provider] 행만 지운다. 세션·기기·데이터는 그대로다 (Kakao 연결 해제 알림, API.md 4.8 5단계, ERD DB-15).
+	 * 바로 반영(flush)한다. 지웠으면 true.
+	 */
+	@Transactional(propagation = Propagation.MANDATORY)
+	fun remove(userId: UUID, provider: SocialProvider): Boolean {
+		val account = socialAccounts.findAllByUserId(userId).firstOrNull { it.provider == provider } ?: return false
+		socialAccounts.delete(account)
+		socialAccounts.flush()
+		return true
+	}
 }

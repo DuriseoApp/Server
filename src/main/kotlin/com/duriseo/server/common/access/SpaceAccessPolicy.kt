@@ -6,6 +6,9 @@ import jakarta.persistence.EntityManager
 import org.springframework.stereotype.Component
 import java.util.UUID
 
+/** 가져오기 대기 중인 개인 공간 (R-18). [coupleSpaceId]는 요청자의 활성 커플 공간, [personalSpaceIds]는 소속에 `left_at`이 있는 개인 공간 */
+data class PendingImport(val coupleSpaceId: UUID, val personalSpaceIds: List<UUID>)
+
 /**
  * 서버 권한 검사 규칙 (API.md 2장 R-)을 구현하는 단 한 곳이다 (NFR-SEC-02, ARCHITECTURE 3장).
  * 서비스가 이 정책을 부르고, 컨트롤러·리포지토리에서 따로 검사하지 않는다.
@@ -61,6 +64,26 @@ class SpaceAccessPolicy(private val em: EntityManager) {
 		val (spaceId, type) = activeSpaceOf(userId) ?: error("user has no active space")
 		if (type != COUPLE_SPACE_TYPE) throw notCouple()
 		return spaceId
+	}
+
+	/**
+	 * R-18(기록 가져오기 `POST /couple/import`): 요청자에게 가져오기 대기 중인 개인 공간(소속에 `left_at`이 있는 PERSONAL)이 있을 것.
+	 * 그런 공간은 커플 공간에 있는 동안만 있다 (D-78). 게스트·회원 구분 없이 이 조건만 본다.
+	 * 없으면 409 `NO_IMPORT_PENDING`(이미 정했거나 해제와 겹침). 허용되면 활성 커플 공간과 대기 공간을 돌려준다.
+	 * 공간 행을 잠근 뒤 한 번 더 불러 그 사이 해제되거나 다른 요청이 먼저 정하지 않았는지 확인한다.
+	 */
+	fun requireImportPending(userId: UUID): PendingImport {
+		val (coupleSpaceId, type) = activeSpaceOf(userId) ?: throw noImportPending()
+		if (type != COUPLE_SPACE_TYPE) throw noImportPending()
+		val pending = em.createNativeQuery(
+			"select sm.space_id from space_members sm join spaces s on s.id = sm.space_id " +
+				"where sm.user_id = :userId and sm.left_at is not null and s.type = 'PERSONAL' order by sm.space_id",
+		)
+			.setParameter("userId", userId)
+			.resultList
+			.map { it as UUID }
+		if (pending.isEmpty()) throw noImportPending()
+		return PendingImport(coupleSpaceId, pending)
 	}
 
 	/**
@@ -129,6 +152,8 @@ class SpaceAccessPolicy(private val em: EntityManager) {
 	}
 
 	private fun notCouple() = ApiException(ErrorCode.NOT_COUPLE, "not in a couple space")
+
+	private fun noImportPending() = ApiException(ErrorCode.NO_IMPORT_PENDING, "no personal space is waiting to be imported")
 
 	/** 없는 리소스와 다른 공간의 리소스는 같은 응답이어야 하므로 메시지도 하나로 고정한다 */
 	private fun notFound() = ApiException(ErrorCode.NOT_FOUND, "not found")

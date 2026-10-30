@@ -44,4 +44,29 @@ interface SpaceMemberRepository : JpaRepository<SpaceMember, UUID> {
 	@Modifying(flushAutomatically = true, clearAutomatically = true)
 	@Query("update SpaceMember m set m.leftAt = null where m.spaceId = :spaceId")
 	fun reopenAllOf(@Param("spaceId") spaceId: UUID): Int
+
+	/** 사용자의 커플 공간 상대(같은 활성 [type] 공간의 다른 활성 구성원). 잠그지 않고 값만 읽는다. 커플이 아니면 null */
+	@Query(
+		"select p.userId from SpaceMember m, SpaceMember p, Space s " +
+			"where m.userId = :userId and m.leftAt is null and s.id = m.spaceId and s.type = :type " +
+			"and p.spaceId = m.spaceId and p.leftAt is null and p.userId <> :userId",
+	)
+	fun findActivePartnerId(@Param("userId") userId: UUID, @Param("type") type: SpaceType): UUID?
+
+	/** [spaceId]의 활성 소속을 모두 떠난다 (`left_at` 기록, API.md 4.5 2단계). 영속성 컨텍스트를 비운다 */
+	@Modifying(flushAutomatically = true, clearAutomatically = true)
+	@Query("update SpaceMember m set m.leftAt = :now where m.spaceId = :spaceId and m.leftAt is null")
+	fun closeAllActive(@Param("spaceId") spaceId: UUID, @Param("now") now: Instant): Int
+
+	/**
+	 * 사용자의 가져오기 대기 중인 [type] 개인 공간 소속(소속에 `left_at`이 있는 PERSONAL)을 다시 활성으로 돌린다 (API.md 4.5 4단계, D-78).
+	 * 커플 공간 소속의 `left_at`을 먼저 기록한 뒤에 불러야 `uq_space_members_active_user`를 지킨다. 영속성 컨텍스트를 비운다.
+	 * 되살린 소속 수를 돌려준다.
+	 */
+	@Modifying(flushAutomatically = true, clearAutomatically = true)
+	@Query(
+		"update SpaceMember m set m.leftAt = null where m.userId = :userId and m.leftAt is not null " +
+			"and m.spaceId in (select s.id from Space s where s.type = :type)",
+	)
+	fun reopenLeftSpacesOfType(@Param("userId") userId: UUID, @Param("type") type: SpaceType): Int
 }

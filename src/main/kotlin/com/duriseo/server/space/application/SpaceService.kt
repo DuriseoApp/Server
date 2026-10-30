@@ -145,8 +145,45 @@ class SpaceService(
 		spaces.deleteSpaceById(spaceId)
 	}
 
+	/** 사용자의 커플 공간 상대. 잠그지 않고 값만 읽는다. 커플 공간에 있지 않으면 null (사용자 행을 UUID 순서로 잠그려고 먼저 알아낸다) */
+	@Transactional(readOnly = true)
+	fun activePartnerIdOf(userId: UUID): UUID? = members.findActivePartnerId(userId, SpaceType.COUPLE)
+
+	/** 공간 행을 잠그고(SELECT … FOR UPDATE) 읽는다. 없으면 null. 사용자 행을 잠근 뒤에 부른다 (잠금 순서 users → invite_codes → spaces) */
+	@Transactional(propagation = Propagation.MANDATORY)
+	fun lockSpace(spaceId: UUID): Space? = spaces.findByIdForUpdate(spaceId)
+
+	/**
+	 * 활성 커플 공간을 해제한다 (API.md 4.5 2단계, ERD 4.2): UNLINKED, `unlinked_at` = [now], `purge_at` = [now] + 30일(PRD D-06),
+	 * 구성원 소속에 `left_at` 기록. 해제 전 활성 구성원의 사용자 ID를 돌려준다. 공간 행을 잠근 뒤에 부른다.
+	 * 영속성 컨텍스트를 비우므로 부른 쪽은 이 뒤에 이전에 읽은 엔티티를 쓰지 않는다.
+	 */
+	@Transactional(propagation = Propagation.MANDATORY)
+	fun unlinkCoupleSpace(spaceId: UUID, now: Instant): List<UUID> {
+		val memberIds = members.findAllBySpaceIdAndLeftAtIsNull(spaceId).map { it.userId }
+		spaces.markUnlinked(spaceId, SpaceStatus.UNLINKED, now, now.plus(UNLINK_RETENTION))
+		members.closeAllActive(spaceId, now)
+		return memberIds
+	}
+
+	/**
+	 * 해제 뒤 사용자의 개인 공간을 정한다 (API.md 4.5 4단계, ERD 4.2, D-78): 가져오기 대기 중인 개인 공간(소속에 `left_at`이 있는 PERSONAL)이
+	 * 있으면 그 소속을 되살리고(혼자 쓴 기록과 색이 그대로 돌아온다), 없으면 새 빈 개인 공간(주황)을 만든다.
+	 * 커플 공간 소속의 `left_at`을 먼저 기록한 뒤에 부른다 (`uq_space_members_active_user`).
+	 * 되살렸으면 true, 새로 만들었으면 false.
+	 */
+	@Transactional(propagation = Propagation.MANDATORY)
+	fun restoreOrCreatePersonalSpace(userId: UUID): Boolean {
+		if (members.reopenLeftSpacesOfType(userId, SpaceType.PERSONAL) > 0) return true
+		createPersonalSpace(userId)
+		return false
+	}
+
 	private companion object {
 		/** 탈퇴한 사용자가 속했던 커플 공간 보관 기간 (PRD D-36) */
 		val WITHDRAWAL_RETENTION: Duration = Duration.ofDays(90)
+
+		/** 연결을 해제한 커플 공간 보관 기간 (PRD D-06) */
+		val UNLINK_RETENTION: Duration = Duration.ofDays(30)
 	}
 }

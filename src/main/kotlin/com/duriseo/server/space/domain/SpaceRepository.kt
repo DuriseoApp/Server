@@ -74,4 +74,20 @@ interface SpaceRepository : JpaRepository<Space, UUID> {
 	@Modifying(flushAutomatically = true, clearAutomatically = true)
 	@Query("update Space s set s.status = :status, s.unlinkedAt = null, s.purgeAt = null, s.updatedAt = :now where s.id = :id")
 	fun reactivate(@Param("id") id: UUID, @Param("status") status: SpaceStatus, @Param("now") now: Instant): Int
+
+	/**
+	 * 활성 커플 공간을 UNLINKED로 바꾼다: `unlinked_at` = [now], `purge_at` = [purgeAt] (API.md 4.5 2단계, ERD 4.2).
+	 * `ck_spaces_unlinked_columns` 때문에 세 값을 한 문장에서 같이 바꾼다. 영속성 컨텍스트를 비운다.
+	 */
+	@Modifying(flushAutomatically = true, clearAutomatically = true)
+	@Query(
+		"update Space s set s.status = :status, s.unlinkedAt = :now, s.purgeAt = :purgeAt, s.updatedAt = :now " +
+			"where s.id = :id",
+	)
+	fun markUnlinked(
+		@Param("id") id: UUID,
+		@Param("status") status: SpaceStatus,
+		@Param("now") now: Instant,
+		@Param("purgeAt") purgeAt: Instant,
+	): Int
 }

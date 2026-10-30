@@ -10,6 +10,7 @@ import com.duriseo.server.couple.domain.InviteCodeRepository
 import com.duriseo.server.user.application.UserService
 import jakarta.persistence.EntityManager
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
 import java.time.Duration
@@ -65,6 +66,12 @@ class InviteCodeService(
 		val now = clock.nowInSeconds()
 		val valid = inviteCodes.findValidOf(userId, now) ?: throw ApiException(ErrorCode.NOT_FOUND, "no valid invite code")
 		return InviteCodeView(valid.code, valid.expiresAt, valid.createdAt.plus(REISSUE_INTERVAL))
+	}
+
+	/** 탈퇴하는 사용자의 유효한 코드(사용·무효화되지 않은 코드)를 지운다 (ERD 4.3 4단계). 영속성 컨텍스트를 비운다 */
+	@Transactional(propagation = Propagation.MANDATORY)
+	fun deleteValidOf(userId: UUID) {
+		inviteCodes.deleteValidOf(userId)
 	}
 
 	/**
