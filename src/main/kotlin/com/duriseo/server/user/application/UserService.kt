@@ -77,6 +77,13 @@ class UserService(
 	fun lockForUpdate(userId: UUID): User =
 		checkNotNull(users.findByIdForUpdate(userId)) { "user to lock is missing" }
 
+	/** 공간 구성원 목록이 보여 줄 닉네임·프로필 사진 여부 (`GET /space`, API.md 3.2 `SpaceMember`). 없는 ID는 결과에 없다 */
+	@Transactional(readOnly = true)
+	fun profilesOf(userIds: Collection<UUID>): Map<UUID, UserProfile> =
+		users.findAllById(userIds).associate { user ->
+			user.requireId() to UserProfile(user.requireId(), user.nickname, user.profileImageKey != null)
+		}
+
 	/** 탈퇴하지 않은 사용자. 없거나 탈퇴했으면 null */
 	@Transactional(readOnly = true)
 	fun findActive(userId: UUID): User? = users.findByIdOrNull(userId)?.takeIf { it.deletedAt == null }

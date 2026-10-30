@@ -127,6 +127,63 @@ class SpaceAccessPolicyTest : IntegrationTestSupport() {
 		assertEquals(403, assertApiError(ErrorCode.GUEST_NOT_ALLOWED) { policy.requireInviteEligible(userId) }.code.status.value())
 	}
 
+	// ── R-08 ────────────────────────────────────────────
+
+	@Test
+	fun `R-08 커플 공간의 구성원은 처음 만난 날(requireCoupleSpace)을 허용한다`() {
+		val userId = insertUser("MEMBER")
+		val partnerId = insertUser("MEMBER")
+		val coupleSpaceId = insertSpace("COUPLE")
+		insertMember(coupleSpaceId, userId)
+		insertMember(coupleSpaceId, partnerId, "pick-blue")
+
+		assertEquals(coupleSpaceId, policy.requireCoupleSpace(userId))
+	}
+
+	@Test
+	fun `R-08 개인 공간은 처음 만난 날(requireCoupleSpace)을 409 NOT_COUPLE로 거부한다`() {
+		val (guestId, _) = userWithPersonalSpace("GUEST")
+		val (memberId, _) = userWithPersonalSpace("MEMBER")
+
+		assertApiError(ErrorCode.NOT_COUPLE) { policy.requireCoupleSpace(guestId) }
+		assertApiError(ErrorCode.NOT_COUPLE) { policy.requireCoupleSpace(memberId) }
+	}
+
+	@Test
+	fun `R-08 해제돼 떠난 커플 공간만 남은 사용자는 활성 개인 공간 기준으로 409 NOT_COUPLE이다`() {
+		val userId = insertUser("MEMBER")
+		val leftSpaceId = insertSpace("COUPLE", unlinked = true)
+		insertMember(leftSpaceId, userId, left = true)
+		val activeSpaceId = insertSpace("PERSONAL")
+		insertMember(activeSpaceId, userId)
+
+		assertApiError(ErrorCode.NOT_COUPLE) { policy.requireCoupleSpace(userId) }
+	}
+
+	@Test
+	fun `R-08 커플 구성원은 사람 색(requireColorChangeAllowed)을 상대 색과 함께 색까지 허용한다`() {
+		val userId = insertUser("MEMBER")
+		val partnerId = insertUser("MEMBER")
+		val coupleSpaceId = insertSpace("COUPLE")
+		insertMember(coupleSpaceId, userId)
+		insertMember(coupleSpaceId, partnerId, "pick-blue")
+
+		assertEquals(coupleSpaceId, policy.requireColorChangeAllowed(userId, listOf(userId, partnerId, null), true))
+	}
+
+	@Test
+	fun `R-08 개인 공간은 자기 색만 허용하고 together나 자기 밖 userId는 409 NOT_COUPLE이다`() {
+		val (userId, spaceId) = userWithPersonalSpace("MEMBER")
+		val otherId = insertUser("MEMBER")
+
+		assertEquals(spaceId, policy.requireColorChangeAllowed(userId, listOf(userId), false))
+		assertApiError(ErrorCode.NOT_COUPLE) { policy.requireColorChangeAllowed(userId, listOf(userId), true) }
+		assertApiError(ErrorCode.NOT_COUPLE) { policy.requireColorChangeAllowed(userId, listOf(otherId), false) }
+		assertApiError(ErrorCode.NOT_COUPLE) { policy.requireColorChangeAllowed(userId, listOf(userId, otherId), false) }
+		// 해석할 수 없는 userId(null)도 자기 밖으로 본다
+		assertApiError(ErrorCode.NOT_COUPLE) { policy.requireColorChangeAllowed(userId, listOf(null), false) }
+	}
+
 	// ── R-11 ────────────────────────────────────────────
 
 	@Test

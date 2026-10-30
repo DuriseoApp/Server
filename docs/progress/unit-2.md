@@ -1,8 +1,23 @@
 # 단위 2: 커플 (couple)
 
-> 브랜치: `feat/2-couple` · PR: (링크) · 상태: 범위 확인 대기 (코드 없음)
-> 기준: PRD v0.7 (FR-COUPLE-01~06, FR-CAL-04, FR-AUTH-06 AC2, NFR-SEC-02·03, D-05~08, D-36, D-37, D-42, D-45, D-47~49, D-53, D-61, D-72, D-74, D-76, D-78), API.md 1장·1.1·2장(R-01·R-08·R-09·R-15)·3.2·4.4·4.5·4.6·5장·6장·7장, ERD 3.1(notifications)·3.2·4.1·4.2·4.3·4.5·5장(DB-03·04·05·07·08·13)
-> Docs 기준 커밋: DuriseoApp/Docs main `b992123` (2026-10-26)
+> 브랜치: `feat/2-couple` · PR: (링크) · 상태: 구현 1부 완료 (초대코드·연결·공간·색·`Me.createdAt`), 2부 대기 (`POST /couple/import`, `DELETE /couple`, R-18, 탈퇴 연결점, Kakao 웹훅, `WithdrawalDataEraser` 정리)
+> 기준: PRD v0.8 (FR-COUPLE-01~06, FR-CAL-04, FR-AUTH-06 AC2, NFR-SEC-02·03, D-05~08, D-36, D-37, D-42, D-45, D-47~49, D-53, D-61, D-72, D-74, D-76, D-78, D-83~85), API.md 1장·1.1·2장(R-01·R-08·R-09·R-15·R-18)·3.2·4.4·4.5·4.6·5장·6장·7장, ERD 3.1(notifications)·3.2·4.1·4.2·4.3·4.5·5장(DB-03·04·05·07·08·13·16)
+> Docs 기준 커밋: DuriseoApp/Docs main `afc3d1b` (PRD v0.8, Docs PR #9 머지). 처음 범위를 잡을 때는 `b992123`(PRD v0.7)였다.
+
+## 확인 필요 해결 (PRD v0.8, Docs PR #9)
+
+아래 "확인 필요" 1~10은 모두 Docs v0.8에 반영돼 해결됐다. **이 절과 Docs가 다르면 Docs가 맞다.** 아래 범위 표의 `<확인 필요 N>`은 이 절의 결정으로 읽는다. 일부 항목은 처음 제안한 추천안과 다르다(굵게 표시).
+
+1. SYNC `LINKED` 발송: API.md 4.4 7단계·6장이 신호 내용(`SPACE`/`LINKED`, 두 사람 모두, `id` 없음)을 정했다. 발송은 단위 6이고 **단위 2는 커밋 뒤에 전달되는 `CoupleLinked` 이벤트까지**만 만든다 (리드 결정, 추천 A)
+2. 응답 모양·상태: API.md 3.2 표와 `InviteCode`·`CoupleJoinResult`·`Space`·`SpaceMember` 정의. `POST /invite-codes` 201, `GET /invite-codes/current` 200, `POST /couple/join` 200, `POST /couple/import` 204, `DELETE /couple` 204, `GET /space`·`PATCH /space`·`PATCH /space/colors` 200 `Space`. `Me.createdAt`은 3.1
+3. 유효한 코드가 없을 때: API.md 3.2 `GET /invite-codes/current`, 4.4 1단계, 5장 `NOT_FOUND`. 만든 적 없음·만료·무효·사용됨 모두 404 `NOT_FOUND` (추천 A)
+4. 거부 사유 우선순위·형식 오류: API.md 4.4 2단계 표(10단계), 5장 `INVITE_NOT_FOUND`·`INVITE_UNAVAILABLE`. **순서는 R-09 게스트 → R-09 커플 → `code` 없음 400 → 오입력 제한 429 → 형식 오류 404 → 없음 404 → 자기 코드 → 사용됨 → 만든 사람이 커플(`INVITE_UNAVAILABLE`) → 만료·무효(`INVITE_EXPIRED`)**. 추천안은 9와 10의 앞뒤가 달랐고, 탈퇴한 사람의 코드는 지워져 `INVITE_NOT_FOUND`다
+5. 오입력 제한: API.md 4.4 2단계 "오입력 제한", ERD 3.2 `invite_code_attempts`, PRD D-83. 미끄러지는 창, `retryAfterSeconds` = 10번째로 최근 실패 + 1시간 − 지금(올림, 최소 1). 실패로 세는 것은 5~10번 사유, 세지 않는 것은 1~3번과 4번 자체 (추천 A)
+6. `PATCH /space/colors`: API.md 3.2 "공간 변경 규칙", 팔레트 키 12개(3.2, ERD 3.2), R-08. 모든 필드 선택, 검사 순서 3단계 (추천 A)
+7. 처음 만난 날 지우기 없음: PRD D-84, API.md 3.2 "공간 변경 규칙"(검사 순서 ①~④), 5장 (추천 A)
+8. 연결·해제 알림 이동 대상: API.md 3.5·4.4 6단계·7장, PRD D-85. 둘 다 `target_type = SETTINGS`, `target_id` null (추천 A)
+9. 커플이 아닌 사용자의 `DELETE /couple`: API.md 2장 R-18, 4.5 1단계, 5장 `NOT_COUPLE` (추천 A, 2부)
+10. 연결 때 다른 유효 코드 무효화: API.md 4.4 5단계, ERD 3.2 `invite_codes`·DB-16 (추천 A)
 
 ## 범위
 
@@ -293,6 +308,22 @@ API 7장: "모든 알림 작업은 받는 사람마다 `notifications` 행을 **
 - 단위 2가 `notification` 패키지에 `Notification` 엔티티와 행 생성 서비스(연결·해제 알림만)를 만들고, `WithdrawalDataEraser`의 `notifications` 삭제를 그 서비스로 옮긴다. 목록·읽음·설정 API는 단위 6.
 - 콘텐츠 테이블(events, anniversaries, memos, event_reminders)은 아직 엔티티가 없어 couple의 한 컴포넌트에서 네이티브 SQL로 다룬다 (ARCHITECTURE 2장의 "다른 도메인은 서비스로만"의 임시 예외. 단위 3·4·5가 옮긴다).
 
+구현 1부에서 정한 것 (Docs v0.8 기준, 위 "확인 필요 해결"과 겹치지 않는 구현 결정):
+
+- **실패 시도는 `REQUIRES_NEW`가 아니라 "커밋하는 거부"로 남긴다.** 위 위험 메모 3("시도 테이블은 users를 잠그지 않음")은 틀렸다: `invite_code_attempts.user_id`의 외래 키 검사는 `users` 행에 `FOR KEY SHARE`를 요구하는데, 바깥 트랜잭션이 요청자 행을 `FOR UPDATE`로 잡고 있어 안쪽 INSERT가 바깥을 기다리고 바깥은 안쪽을 기다리는 자기 교착이 된다. 그래서 `CoupleLinker.attempt`는 실패로 세는 거부(API.md 4.4 표 5~10번)를 예외로 던지지 않고 시도 행만 넣은 채 `JoinOutcome.Rejected`로 돌려주고(그 시점까지 아무것도 바꾸지 않았다), 트랜잭션이 커밋된 뒤 `CoupleJoinService`가 `ApiException`을 던진다. 응답이 오류여도 기록이 남고(API.md "실패 기록은 응답이 오류여도 남는다"), 요청자 행 잠금 아래에서 횟수를 세므로 같은 사용자의 겹친 입력도 순서가 정해진다. 1~3번(R-09, `code` 누락)과 4번(429)은 예외로 던져 롤백하고 시도 행이 없다.
+- 연결의 잠금: 잠금 없이 `code`로 만든 사람 A만 읽고(값만 읽어 영속성 컨텍스트에 남기지 않는다) → A와 요청자 B를 UUID 오름차순으로 `FOR UPDATE` → 잠근 뒤 R-09를 한 번 더 → 오입력 횟수 → 코드 행 `FOR UPDATE` 다시 읽기 → 7~10번 → 복구 후보 공간 행 잠금. 처음 읽을 때 없던 코드는 그대로 `INVITE_NOT_FOUND`로 본다(잠금 순서를 지키려고. 그 사이에 생긴 코드는 "요청이 먼저 왔다"로 본다).
+- 연결 안의 순서: 복구 후보 확인 → 두 사람의 개인 공간 처리(기록 있으면 소속 `left_at`, 없으면 공간 삭제) → 커플 공간 생성/복구 → 입력한 코드 사용 처리 → 두 사람의 다른 유효 코드 `revoked_at`(DB-16) → 성공 시도 → `COUPLE_LINKED` 두 행 → `CoupleLinked` 발행. 개인 공간 소속을 먼저 닫아야 `uq_space_members_active_user`에 걸리지 않는다. JPQL 일괄 UPDATE/DELETE는 `flushAutomatically`와 `clearAutomatically`를 쓰고, 연결 흐름은 그 뒤에 영속성 컨텍스트의 엔티티를 쓰지 않는다(필요한 값은 먼저 꺼내 둠).
+- `INSERT INTO invite_codes … ON CONFLICT (code) DO NOTHING`을 네이티브로 한 문장씩 시도하고(최대 10번) 영향 행이 0이면 다른 코드로 다시 만든다. 생성기는 `InviteCodeGenerator` 인터페이스(테스트가 `@Primary` 가짜로 충돌을 만든다).
+- `POST /couple/join`, `PATCH /space`, `PATCH /space/colors`는 R-09/R-08(403·409)이 `code`·필드 검사(400)보다 먼저 나가야 하고 "필드 없음"과 `null`을 구분해야 해서 `@RequestBody(required = false) Map<String, Any?>?`로 받는다(본문이 아예 없어도 R-09/R-08이 먼저).
+- Docs에 없는 입력 모양(코드 안에서 정함): `code`가 문자열이 아니면 400 `VALIDATION_FAILED`(`code`, `INVALID`, 시도로 세지 않음), `members`가 배열이 아니거나 원소가 객체가 아니면 `members`/`members[i]` `INVALID`, 원소가 `null`이면 `members[i]` `REQUIRED`, `members[i].userId`·`color`·`together`가 문자열이 아니면(UUID·팔레트 해석 불가 포함) 값 검사(3단계)의 `INVALID`.
+- `PATCH /space/colors` 3단계는 틀린 필드를 모두 `details.fields`에 담는다(PATCH /me와 같다). 검사 순서는 필드 누락(1) → R-08(2) → 값(3)이라 개인 공간에서 `{}`는 409가 아니라 400이다.
+- 공간 행을 잠그는 사이 연결이 해제됐거나 공간이 사라졌으면 `PATCH /space`, `/space/colors`는 409 `NOT_COUPLE`로 답한다(요청이 겨냥한 공간이 더는 활성 공간이 아니므로).
+- 공간 변경(`PATCH /space`, `/space/colors`)은 커밋 뒤 SYNC를 위해 `SpaceUpdated(spaceId, changedByUserId)`를 트랜잭션 안에서 발행한다(듣는 쪽은 단위 6, API.md 6장).
+- `Me.createdAt`은 `users.created_at`을 초 단위로 자른 값이다(API.md 3.1). `MeSpace`는 v0.8과 같아 바꾸지 않았다.
+- `CoupleLinked`에는 단위 6이 `NOTIFICATION` 신호를 보낼 수 있게 사용자별 알림 ID(`notificationIds`)를 담았다.
+- 콘텐츠 개수 확인은 `couple/application/CoupleContentGateway`가 `events`, `anniversaries`, `memos`를 네이티브 SQL로 센다(단위 3·4·5가 도메인 서비스로 옮긴다).
+- `GET /space`의 구성원 닉네임은 `SpaceDetailService`(space)가 `UserService.profilesOf`(user)로 읽는다. 순환 의존을 피하려고 `SpaceService`는 user를 모르고 `MeService`·`SpaceDetailService`가 둘을 조합한다.
+
 ## 리뷰 기록
 
 | 회차 | Critical | Major | 비고 |
@@ -300,12 +331,13 @@ API 7장: "모든 알림 작업은 받는 사람마다 `notifications` 행을 **
 
 ## 남은 일
 
-- 사용자: 범위 표와 아래 확인 필요를 보고 "start" (확인 필요 중 Docs 수정이 필요한 것은 Docs 레포 `/prd-sync`)
+- **구현 2부**: `POST /couple/import`(204, R-18 `NO_IMPORT_PENDING`, `import` 누락 400), `DELETE /couple`(204, R-18 `NOT_COUPLE`, 4.5 해제·알림·D-45 삭제·D-78 되살리기), 탈퇴 연결점 `WithdrawalService.unlinkCoupleBeforeWithdrawal`(+ `WithdrawalTest`의 500 테스트 교체), Kakao 웹훅 `/webhooks/kakao/unlink`, `WithdrawalDataEraser`의 `invite_codes`·`notifications` 삭제를 couple·notification 서비스로 옮기기. 1부가 만든 `SpaceAccessPolicy.requireCoupleSpace`는 R-18에도 그대로 쓴다
+- 사용자: CI 결과 확인 (이 환경은 Gradle을 못 돌려 컴파일·테스트를 CI가 처음 돌린다)
 - 단위 3·4·5: 단위 2의 콘텐츠 네이티브 SQL(개수 확인, `space_id` 이동, `event_reminders` 삭제)을 각 도메인 서비스로 옮기기
-- 단위 6: `CoupleLinked`·`CoupleUnlinked`·`SpaceUpdated`·`UserWithdrawn`을 듣는 푸시·SYNC, `purge_at`·초대코드·시도 정리 작업
-- Android: 초대코드·연결·가져오기·해제·공간 응답 모양(확인 필요 2), 오류 우선순위(확인 필요 4), `retryAfterSeconds`(확인 필요 5)
+- 단위 6: `CoupleLinked`·`CoupleUnlinked`·`SpaceUpdated`·`UserWithdrawn`을 듣는 푸시·SYNC(`LINKED` 포함), `purge_at`·초대코드·시도 정리 작업
+- Android: 초대코드·연결·가져오기·해제·공간 응답 모양은 API.md 3.2, 오류 우선순위·`retryAfterSeconds`는 4.4
 
-## 확인 필요
+## 확인 필요 (모두 해결됨 — 위 "확인 필요 해결" 절)
 
 문서끼리 다르거나 비어 있는 곳. 추측하지 않고 선택지를 적는다. Docs를 고쳐야 하는 항목은 Docs 레포 `/prd-sync`로.
 

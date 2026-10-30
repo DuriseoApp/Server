@@ -3,6 +3,7 @@ package com.duriseo.server.user.application
 import com.duriseo.server.space.domain.SpaceType
 import com.duriseo.server.user.domain.AccountType
 import com.duriseo.server.user.domain.SocialProvider
+import java.time.Instant
 import java.time.LocalDate
 import java.util.UUID
 
@@ -14,6 +15,7 @@ data class MeView(
 	val timeZone: String,
 	val providers: List<SocialProvider>,
 	val hasProfileImage: Boolean,
+	val createdAt: Instant,
 	val space: MeSpaceView,
 )
 

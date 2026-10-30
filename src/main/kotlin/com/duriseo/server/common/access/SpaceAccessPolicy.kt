@@ -53,6 +53,30 @@ class SpaceAccessPolicy(private val em: EntityManager) {
 	}
 
 	/**
+	 * R-08(처음 만난 날 `PATCH /space`)과 R-18(연결 해제 `DELETE /couple`): 요청자의 활성 공간이 `COUPLE`이어야 한다.
+	 * 개인 공간이면 409 `NOT_COUPLE`. 허용되면 활성 커플 공간 ID를 돌려준다.
+	 * 공간 행을 잠근 뒤 한 번 더 불러 그 사이 연결이 해제되지 않았는지 확인한다.
+	 */
+	fun requireCoupleSpace(userId: UUID): UUID {
+		val (spaceId, type) = activeSpaceOf(userId) ?: error("user has no active space")
+		if (type != COUPLE_SPACE_TYPE) throw notCouple()
+		return spaceId
+	}
+
+	/**
+	 * R-08(사람 색 `PATCH /space/colors`): 커플 공간의 구성원이면 허용한다. 개인 공간에서는 자기 색만 바꿀 수 있어서
+	 * `together`가 있거나 [requestedUserIds]에 자기 밖의 사용자(해석할 수 없는 값은 null)가 있으면 409 `NOT_COUPLE`이다.
+	 * 허용되면 활성 공간 ID를 돌려준다.
+	 */
+	fun requireColorChangeAllowed(userId: UUID, requestedUserIds: Collection<UUID?>, togetherRequested: Boolean): UUID {
+		val (spaceId, type) = activeSpaceOf(userId) ?: error("user has no active space")
+		if (type != COUPLE_SPACE_TYPE) {
+			if (togetherRequested || requestedUserIds.any { it != userId }) throw notCouple()
+		}
+		return spaceId
+	}
+
+	/**
 	 * R-11: 프로필 사진 조회는 본인 또는 같은 활성 공간의 구성원만. 아니면 404 `NOT_FOUND`.
 	 * 없는 사용자, 탈퇴한 사용자(`deleted_at` 있음), 다른 공간의 사용자, 연결이 해제된 이전 상대는 모두 같은 404다.
 	 */
@@ -92,6 +116,20 @@ class SpaceAccessPolicy(private val em: EntityManager) {
 
 	private fun count(sql: String, vararg params: Pair<String, Any>): Long = (scalar(sql, *params) as Number).toLong()
 
+	/** 활성 공간의 (ID, 종류). 활성 소속이 없으면 null */
+	private fun activeSpaceOf(userId: UUID): Pair<UUID, String>? {
+		val row = em.createNativeQuery(
+			"select sm.space_id, s.type from space_members sm join spaces s on s.id = sm.space_id " +
+				"where sm.user_id = :userId and sm.left_at is null",
+		)
+			.setParameter("userId", userId)
+			.resultList
+			.firstOrNull() as Array<*>? ?: return null
+		return (row[0] as UUID) to (row[1] as String)
+	}
+
+	private fun notCouple() = ApiException(ErrorCode.NOT_COUPLE, "not in a couple space")
+
 	/** 없는 리소스와 다른 공간의 리소스는 같은 응답이어야 하므로 메시지도 하나로 고정한다 */
 	private fun notFound() = ApiException(ErrorCode.NOT_FOUND, "not found")
 
@@ -99,5 +137,6 @@ class SpaceAccessPolicy(private val em: EntityManager) {
 		const val GUEST_TYPE = "GUEST"
 		const val MEMBER_TYPE = "MEMBER"
 		const val PERSONAL_SPACE_TYPE = "PERSONAL"
+		const val COUPLE_SPACE_TYPE = "COUPLE"
 	}
 }

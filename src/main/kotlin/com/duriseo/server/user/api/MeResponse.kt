@@ -6,6 +6,7 @@ import com.duriseo.server.user.application.MeSpaceView
 import com.duriseo.server.user.application.MeView
 import com.duriseo.server.user.domain.AccountType
 import com.duriseo.server.user.domain.SocialProvider
+import java.time.Instant
 import java.time.LocalDate
 import java.util.UUID
 
@@ -17,6 +18,7 @@ data class MeResponse(
 	val timeZone: String,
 	val providers: List<SocialProvider>,
 	val hasProfileImage: Boolean,
+	val createdAt: Instant,
 	val space: MeSpaceResponse,
 ) {
 	companion object {
@@ -27,6 +29,7 @@ data class MeResponse(
 			timeZone = view.timeZone,
 			providers = view.providers,
 			hasProfileImage = view.hasProfileImage,
+			createdAt = view.createdAt,
 			space = MeSpaceResponse.from(view.space),
 		)
 	}

@@ -29,6 +29,10 @@ import java.time.Instant
 import java.util.Date
 import java.util.HexFormat
 import java.util.UUID
+import java.util.concurrent.Callable
+import java.util.concurrent.CyclicBarrier
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 /** `/auth/guest`나 `/auth/refresh`가 돌려준 토큰 */
 data class Tokens(
@@ -66,6 +70,12 @@ abstract class IntegrationTestSupport {
 	protected lateinit var fakeKakao: FakeKakaoUnlinker
 
 	@Autowired
+	protected lateinit var inviteCodeGenerator: ScriptedInviteCodeGenerator
+
+	@Autowired
+	protected lateinit var coupleEvents: CoupleEventRecorder
+
+	@Autowired
 	private lateinit var context: WebApplicationContext
 
 	protected lateinit var mockMvc: MockMvc
@@ -77,6 +87,8 @@ abstract class IntegrationTestSupport {
 		clock.set(START)
 		fakeSocial.reset()
 		fakeKakao.reset()
+		inviteCodeGenerator.reset()
+		coupleEvents.reset()
 		mockMvc = MockMvcBuilders.webAppContextSetup(context).build()
 	}
 
@@ -139,6 +151,99 @@ abstract class IntegrationTestSupport {
 			post("$API/auth/switch").header("Authorization", "Bearer $accessToken")
 				.contentType(MediaType.APPLICATION_JSON).content(socialBody(provider, token)),
 		)
+
+	// ── 공간·커플 요청 ───────────────────────────────────
+
+	protected fun postInviteCode(accessToken: String): ResultActions =
+		mockMvc.perform(post("$API/invite-codes").header("Authorization", "Bearer $accessToken"))
+
+	protected fun getCurrentInviteCode(accessToken: String): ResultActions =
+		mockMvc.perform(get("$API/invite-codes/current").header("Authorization", "Bearer $accessToken"))
+
+	/** `POST /couple/join` 본문을 그대로 보낸다. [json]이 null이면 본문 없이 보낸다 */
+	protected fun joinCoupleRaw(accessToken: String, json: String?): ResultActions {
+		val request = post("$API/couple/join").header("Authorization", "Bearer $accessToken")
+		return mockMvc.perform(if (json == null) request else request.contentType(MediaType.APPLICATION_JSON).content(json))
+	}
+
+	protected fun joinCouple(accessToken: String, code: String): ResultActions = joinCoupleRaw(accessToken, """{"code": "$code"}""")
+
+	protected fun getSpace(accessToken: String): ResultActions =
+		mockMvc.perform(get("$API/space").header("Authorization", "Bearer $accessToken"))
+
+	protected fun patchSpace(accessToken: String, json: String): ResultActions =
+		mockMvc.perform(
+			patch("$API/space").header("Authorization", "Bearer $accessToken").contentType(MediaType.APPLICATION_JSON).content(json),
+		)
+
+	protected fun patchSpaceColors(accessToken: String, json: String): ResultActions =
+		mockMvc.perform(
+			patch("$API/space/colors").header("Authorization", "Bearer $accessToken").contentType(MediaType.APPLICATION_JSON).content(json),
+		)
+
+	protected fun bodyOf(result: ResultActions): String = result.andReturn().response.getContentAsString(Charsets.UTF_8)
+
+	protected fun statusOf(result: ResultActions): Int = result.andReturn().response.status
+
+	/** 게스트로 시작해 곧바로 회원으로 만든다 (초대코드는 회원만 쓴다, R-09). [nickname]을 주면 닉네임도 바꾼다 */
+	protected fun startMember(nickname: String? = null): Tokens {
+		val tokens = startGuest()
+		makeMember(tokens.userId)
+		if (nickname != null) jdbc.update("update users set nickname = ? where id = ?", nickname, tokens.userId)
+		return tokens
+	}
+
+	/** `/auth/refresh`로 새 access 토큰을 받는다. 시계를 1시간 넘게 돌린 테스트가 쓴다 */
+	protected fun refreshed(tokens: Tokens): Tokens {
+		val result = refresh(tokens.refreshToken).andExpect(status().isOk).andReturn()
+		return tokensOf(result.response.getContentAsString(Charsets.UTF_8))
+	}
+
+	/** [creator]가 코드를 만들고 [joiner]가 입력해 연결한다. 연결된 공간 ID를 돌려준다 */
+	protected fun connect(creator: Tokens, joiner: Tokens): UUID {
+		val code = JsonPath.read<String>(bodyOf(postInviteCode(creator.accessToken).andExpect(status().isCreated)), "$.code")
+		val body = bodyOf(joinCouple(joiner.accessToken, code).andExpect(status().isOk))
+		return UUID.fromString(JsonPath.read<String>(body, "$.spaceId"))
+	}
+
+	/** 작업 [tasks]를 서로 다른 스레드에서 거의 동시에 시작해 결과를 순서대로 돌려준다 (동시성 테스트) */
+	protected fun <T> inParallel(tasks: List<() -> T>): List<T> {
+		val executor = Executors.newFixedThreadPool(tasks.size)
+		try {
+			val ready = CyclicBarrier(tasks.size)
+			val futures = tasks.map { task ->
+				executor.submit(
+					Callable {
+						ready.await(10, TimeUnit.SECONDS)
+						task()
+					},
+				)
+			}
+			return futures.map { it.get(60, TimeUnit.SECONDS) }
+		} finally {
+			executor.shutdownNow()
+		}
+	}
+
+	/** 스프링 트랜잭션과 무관한 새 연결로 센다. 다른 연결에서 보이는 값은 커밋된 값뿐이다 */
+	protected fun committedCountOf(sql: String, vararg args: Any): Int =
+		jdbc.dataSource!!.connection.use { connection ->
+			connection.prepareStatement(sql).use { statement ->
+				args.forEachIndexed { index, arg -> statement.setObject(index + 1, arg) }
+				statement.executeQuery().use { rows ->
+					rows.next()
+					rows.getInt(1)
+				}
+			}
+		}
+
+	/** 공간·커플 테이블의 내용을 한 문자열로 모은다. 거부된 요청이 "아무것도 바꾸지 않았다"를 확인한다 (시도 기록은 뺀다) */
+	protected fun coupleSnapshot(): String = listOf(
+		"select id, type, status, start_date, together_color, unlinked_at, purge_at, updated_at from spaces order by id",
+		"select id, space_id, user_id, color, left_at from space_members order by id",
+		"select id, code, creator_user_id, expires_at, used_at, used_by_user_id, revoked_at from invite_codes order by id",
+		"select id, user_id, space_id, type, title, body from notifications order by id",
+	).joinToString("\n") { sql -> jdbc.queryForList(sql).toString() }
 
 	private fun socialBody(provider: String, token: String) = """{"provider": "$provider", "token": "$token"}"""
 
@@ -301,6 +406,30 @@ abstract class IntegrationTestSupport {
 				UUID.randomUUID(), code, creatorId, ts(clock.instant().plusSeconds(600)), ts(clock.instant()),
 			)
 		}
+	}
+
+	/** 코드 한 행을 마음대로 넣는다. 생성·만료·사용·무효 시각을 정해 "만료됨", "무효", "사용됨" 코드를 만든다 */
+	protected fun insertInviteCodeRow(
+		creatorId: UUID,
+		code: String,
+		createdAt: Instant = clock.instant(),
+		expiresAt: Instant = createdAt.plusSeconds(600),
+		usedAt: Instant? = null,
+		usedBy: UUID? = null,
+		revokedAt: Instant? = null,
+	) {
+		jdbc.update(
+			"insert into invite_codes (id, code, creator_user_id, expires_at, used_at, used_by_user_id, revoked_at, created_at) " +
+				"values (?, ?, ?, ?, ?, ?, ?, ?)",
+			UUID.randomUUID(), code, creatorId, ts(expiresAt), usedAt?.let { ts(it) }, usedBy, revokedAt?.let { ts(it) }, ts(createdAt),
+		)
+	}
+
+	protected fun insertAttempt(userId: UUID, succeeded: Boolean, attemptedAt: Instant) {
+		jdbc.update(
+			"insert into invite_code_attempts (id, user_id, succeeded, attempted_at) values (?, ?, ?, ?)",
+			UUID.randomUUID(), userId, succeeded, ts(attemptedAt),
+		)
 	}
 
 	/**

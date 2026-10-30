@@ -8,12 +8,14 @@ import com.duriseo.server.space.domain.SpaceMemberRepository
 import com.duriseo.server.space.domain.SpaceRepository
 import com.duriseo.server.space.domain.SpaceStatus
 import com.duriseo.server.space.domain.SpaceType
+import org.springframework.data.domain.PageRequest
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
 import java.time.Duration
+import java.time.Instant
 import java.time.LocalDate
 import java.util.UUID
 
@@ -86,6 +88,61 @@ class SpaceService(
 	@Transactional(propagation = Propagation.MANDATORY)
 	fun deletePersonalSpacesOf(userId: UUID) {
 		spaces.deleteAllOfTypeBelongingTo(userId, SpaceType.PERSONAL)
+	}
+
+	/** 사용자가 지금 커플 공간에 있는가 (초대코드를 만든 사람이 연결 중인지 볼 때 쓴다, API.md 4.4 2단계 9번) */
+	@Transactional(readOnly = true)
+	fun isInCoupleSpace(userId: UUID): Boolean = members.findActiveSpaceType(userId) == SpaceType.COUPLE
+
+	/** 사용자에게 가져오기 대기 중인 개인 공간(소속에 `left_at`이 있는 PERSONAL)이 있는가 (API.md 4.4 6단계·10단계) */
+	@Transactional(readOnly = true)
+	fun hasPendingImport(userId: UUID): Boolean = members.countLeftSpacesOfType(userId, SpaceType.PERSONAL) > 0
+
+	/**
+	 * 복구할 수 있는 이전 커플 공간 ID (FR-COUPLE-06, API.md 4.4 4단계). 찾으면 그 공간 행을 잠근다.
+	 * 없으면 null. 잠금 순서(users → invite_codes → spaces)를 지키려고 사용자·코드를 잠근 뒤에 부른다.
+	 */
+	@Transactional(propagation = Propagation.MANDATORY)
+	fun findRestorableCoupleSpace(userA: UUID, userB: UUID, now: Instant): UUID? =
+		spaces.findRestorableForUpdate(userA, userB, SpaceType.COUPLE, SpaceStatus.UNLINKED, now, PageRequest.of(0, 1))
+			.firstOrNull()?.requireId()
+
+	/**
+	 * 이전 커플 공간을 ACTIVE로 되돌린다: `unlinked_at`, `purge_at`을 비우고 두 소속의 `left_at`을 비운다 (FR-COUPLE-06).
+	 * 구성원 색과 '함께' 색, 처음 만난 날, 콘텐츠는 그대로다. 두 사람의 개인 공간 소속을 먼저 정리한 뒤에 부른다
+	 * (활성 소속은 사용자당 하나라는 부분 UNIQUE `uq_space_members_active_user` 때문).
+	 */
+	@Transactional(propagation = Propagation.MANDATORY)
+	fun restoreCoupleSpace(spaceId: UUID, now: Instant) {
+		spaces.reactivate(spaceId, SpaceStatus.ACTIVE, now)
+		members.reopenAllOf(spaceId)
+	}
+
+	/**
+	 * 새 커플 공간과 소속 둘을 만든다: 함께 보라, 만든 사람 주황, 입력한 사람 파랑 (FR-CAL-04.AC3, ERD 4.1).
+	 * 두 사람의 개인 공간 소속을 먼저 정리한 뒤에 부른다. 소속 INSERT가 UPDATE보다 먼저 나가는 JPA 쓰기 순서 때문에
+	 * 부분 UNIQUE에 걸리지 않도록 각 단계를 바로 반영(flush)한다.
+	 */
+	@Transactional(propagation = Propagation.MANDATORY)
+	fun createCoupleSpace(creatorUserId: UUID, joinerUserId: UUID, now: Instant): UUID {
+		val space = Space(SpaceType.COUPLE, now)
+		space.togetherColor = PersonColors.PURPLE
+		spaces.saveAndFlush(space)
+		members.saveAndFlush(SpaceMember(space.requireId(), creatorUserId, PersonColors.ORANGE, now))
+		members.saveAndFlush(SpaceMember(space.requireId(), joinerUserId, PersonColors.BLUE, now))
+		return space.requireId()
+	}
+
+	/** 사용자의 활성 소속을 떠난다. 가져오기 대기 중인 개인 공간으로 남길 때 쓴다 (API.md 4.4 5단계) */
+	@Transactional(propagation = Propagation.MANDATORY)
+	fun leaveSpace(userId: UUID, spaceId: UUID, now: Instant) {
+		members.closeActiveMembership(userId, spaceId, now)
+	}
+
+	/** 공간 하나를 지운다. 소속·콘텐츠·공간 알림은 CASCADE로 함께 지워진다 (ERD 4.5) */
+	@Transactional(propagation = Propagation.MANDATORY)
+	fun deleteSpace(spaceId: UUID) {
+		spaces.deleteSpaceById(spaceId)
 	}
 
 	private companion object {
