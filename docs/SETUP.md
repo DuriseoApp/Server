@@ -22,8 +22,8 @@
 | `DB_URL`, `DB_USERNAME` | 설정 | PostgreSQL 접속 정보 |
 | `DB_PASSWORD` | **비밀** | PostgreSQL 비밀번호 |
 | `GOOGLE_WEB_CLIENT_ID` | 공개 설정 | Google 웹 애플리케이션 클라이언트 ID. ID 토큰 `aud` 검증 |
-| `KAKAO_APP_ID` | 공개 설정 | 카카오 앱 ID. 토큰 `app_id` 검증 |
-| `KAKAO_ADMIN_KEY` | **비밀** | 카카오 어드민 키. 탈퇴 시 연결 끊기 |
+| `KAKAO_APP_ID` | 공개 설정 | 카카오 앱 ID. 토큰 `app_id` 검증, 연결 해제 웹훅 `app_id` 검증 |
+| `KAKAO_ADMIN_KEY` | **비밀** | 카카오 어드민 키. 탈퇴 시 연결 끊기, 연결 해제 웹훅 인증(`Authorization: KakaoAK …`) |
 | `FIREBASE_PROJECT_ID` | 공개 설정 | Firebase 프로젝트 ID |
 | `FIREBASE_CREDENTIALS_BASE64` | **비밀** | 서비스 계정 키 JSON을 base64로 (`base64 -i key.json \| tr -d '\n'`) |
 | `JWT_SECRET` | **비밀** | 토큰 서명 키. AWS 서버는 배포 스크립트가 환경마다 만들어 넣어요(`openssl rand -hex 32`, 64자). 앱은 문자열을 UTF-8 그대로 키로 쓰고, 32바이트 미만이거나 비어 있으면 시작하지 않아요 |

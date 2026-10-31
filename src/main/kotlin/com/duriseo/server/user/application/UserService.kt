@@ -77,6 +77,34 @@ class UserService(
 	fun lockForUpdate(userId: UUID): User =
 		checkNotNull(users.findByIdForUpdate(userId)) { "user to lock is missing" }
 
+	/**
+	 * 사용자 행과 커플 상대의 행을 **UUID 오름차순**으로 잠그고(SELECT … FOR UPDATE) 사용자를 돌려준다. 연결 해제와 탈퇴가 쓴다.
+	 * 두 사람이 한 커플 공간을 해제·탈퇴하는 흐름은 모두 사용자 둘을 같은 순서로 잠근 뒤에 공간 행을 잠가야 한다:
+	 * 한쪽이 공간 행을 먼저 잡고 상대 알림·개인 공간 소속을 넣으면(외래 키 검사가 상대 행에 `FOR KEY SHARE`를 요구) 상대 행을
+	 * 잡은 쪽과 교착한다 (잠금 순서 users → invite_codes → spaces).
+	 * 상대는 잠금 없이 먼저 읽는다. 잠근 뒤 상대가 바뀌었으면(그 사이 연결·해제됨) [PartnerLockRetry] 안에서는
+	 * [PartnerChangedException]을 던져 트랜잭션을 롤백하고 처음부터 다시 잠그게 한다. 다시 시도할 수 없으면(재시도를 다 썼거나
+	 * 도우미 밖) 새 상대를 이어서 잠근다. 이 경우 순서가 어긋날 수 있다.
+	 */
+	@Transactional(propagation = Propagation.MANDATORY)
+	fun lockForUpdateWithPartner(userId: UUID): User {
+		val locked = mutableMapOf<UUID, User>()
+		listOfNotNull(userId, spaceService.activePartnerIdOf(userId)).sorted().forEach { locked[it] = lockForUpdate(it) }
+		val current = spaceService.activePartnerIdOf(userId)
+		if (current != null && current !in locked) {
+			if (PartnerLockRetry.canRetry()) throw PartnerChangedException()
+			locked[current] = lockForUpdate(current)
+		}
+		return locked.getValue(userId)
+	}
+
+	/** 공간 구성원 목록이 보여 줄 닉네임·프로필 사진 여부 (`GET /space`, API.md 3.2 `SpaceMember`). 없는 ID는 결과에 없다 */
+	@Transactional(readOnly = true)
+	fun profilesOf(userIds: Collection<UUID>): Map<UUID, UserProfile> =
+		users.findAllById(userIds).associate { user ->
+			user.requireId() to UserProfile(user.requireId(), user.nickname, user.profileImageKey != null)
+		}
+
 	/** 탈퇴하지 않은 사용자. 없거나 탈퇴했으면 null */
 	@Transactional(readOnly = true)
 	fun findActive(userId: UUID): User? = users.findByIdOrNull(userId)?.takeIf { it.deletedAt == null }

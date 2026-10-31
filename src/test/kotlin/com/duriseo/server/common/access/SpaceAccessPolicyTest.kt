@@ -127,6 +127,133 @@ class SpaceAccessPolicyTest : IntegrationTestSupport() {
 		assertEquals(403, assertApiError(ErrorCode.GUEST_NOT_ALLOWED) { policy.requireInviteEligible(userId) }.code.status.value())
 	}
 
+	// ── R-08 ────────────────────────────────────────────
+
+	@Test
+	fun `R-08 커플 공간의 구성원은 처음 만난 날(requireCoupleSpace)을 허용한다`() {
+		val userId = insertUser("MEMBER")
+		val partnerId = insertUser("MEMBER")
+		val coupleSpaceId = insertSpace("COUPLE")
+		insertMember(coupleSpaceId, userId)
+		insertMember(coupleSpaceId, partnerId, "pick-blue")
+
+		assertEquals(coupleSpaceId, policy.requireCoupleSpace(userId))
+	}
+
+	@Test
+	fun `R-08 개인 공간은 처음 만난 날(requireCoupleSpace)을 409 NOT_COUPLE로 거부한다`() {
+		val (guestId, _) = userWithPersonalSpace("GUEST")
+		val (memberId, _) = userWithPersonalSpace("MEMBER")
+
+		assertApiError(ErrorCode.NOT_COUPLE) { policy.requireCoupleSpace(guestId) }
+		assertApiError(ErrorCode.NOT_COUPLE) { policy.requireCoupleSpace(memberId) }
+	}
+
+	@Test
+	fun `R-08 해제돼 떠난 커플 공간만 남은 사용자는 활성 개인 공간 기준으로 409 NOT_COUPLE이다`() {
+		val userId = insertUser("MEMBER")
+		val leftSpaceId = insertSpace("COUPLE", unlinked = true)
+		insertMember(leftSpaceId, userId, left = true)
+		val activeSpaceId = insertSpace("PERSONAL")
+		insertMember(activeSpaceId, userId)
+
+		assertApiError(ErrorCode.NOT_COUPLE) { policy.requireCoupleSpace(userId) }
+	}
+
+	@Test
+	fun `R-08 커플 구성원은 사람 색(requireColorChangeAllowed)을 상대 색과 함께 색까지 허용한다`() {
+		val userId = insertUser("MEMBER")
+		val partnerId = insertUser("MEMBER")
+		val coupleSpaceId = insertSpace("COUPLE")
+		insertMember(coupleSpaceId, userId)
+		insertMember(coupleSpaceId, partnerId, "pick-blue")
+
+		assertEquals(coupleSpaceId, policy.requireColorChangeAllowed(userId, listOf(userId, partnerId, null), true))
+	}
+
+	@Test
+	fun `R-08 개인 공간은 자기 색만 허용하고 together나 자기 밖 userId는 409 NOT_COUPLE이다`() {
+		val (userId, spaceId) = userWithPersonalSpace("MEMBER")
+		val otherId = insertUser("MEMBER")
+
+		assertEquals(spaceId, policy.requireColorChangeAllowed(userId, listOf(userId), false))
+		assertApiError(ErrorCode.NOT_COUPLE) { policy.requireColorChangeAllowed(userId, listOf(userId), true) }
+		assertApiError(ErrorCode.NOT_COUPLE) { policy.requireColorChangeAllowed(userId, listOf(otherId), false) }
+		assertApiError(ErrorCode.NOT_COUPLE) { policy.requireColorChangeAllowed(userId, listOf(userId, otherId), false) }
+		// 해석할 수 없는 userId(null)도 자기 밖으로 본다
+		assertApiError(ErrorCode.NOT_COUPLE) { policy.requireColorChangeAllowed(userId, listOf(null), false) }
+	}
+
+	// ── R-18 ────────────────────────────────────────────
+
+	@Test
+	fun `R-18 커플 공간의 구성원은 연결 해제(requireCoupleSpace)를 허용한다`() {
+		val userId = insertUser("MEMBER")
+		val partnerId = insertUser("MEMBER")
+		val coupleSpaceId = insertSpace("COUPLE")
+		insertMember(coupleSpaceId, userId)
+		insertMember(coupleSpaceId, partnerId, "pick-blue")
+
+		assertEquals(coupleSpaceId, policy.requireCoupleSpace(userId))
+		assertEquals(coupleSpaceId, policy.requireCoupleSpace(partnerId))
+	}
+
+	@Test
+	fun `R-18 개인 공간은 연결 해제(requireCoupleSpace)를 409 NOT_COUPLE로 거부한다`() {
+		val (guestId, _) = userWithPersonalSpace("GUEST")
+		val (memberId, _) = userWithPersonalSpace("MEMBER")
+
+		assertApiError(ErrorCode.NOT_COUPLE) { policy.requireCoupleSpace(guestId) }
+		assertApiError(ErrorCode.NOT_COUPLE) { policy.requireCoupleSpace(memberId) }
+		assertEquals(409, ErrorCode.NOT_COUPLE.status.value())
+	}
+
+	@Test
+	fun `R-18 가져오기 대기 중인 개인 공간이 있는 커플 구성원은 가져오기(requireImportPending)를 허용한다`() {
+		val userId = insertUser("MEMBER")
+		val partnerId = insertUser("MEMBER")
+		val pendingSpaceId = insertSpace("PERSONAL")
+		insertMember(pendingSpaceId, userId, left = true)
+		val coupleSpaceId = insertSpace("COUPLE")
+		insertMember(coupleSpaceId, userId)
+		insertMember(coupleSpaceId, partnerId, "pick-blue")
+
+		val pending = policy.requireImportPending(userId)
+
+		assertEquals(coupleSpaceId, pending.coupleSpaceId)
+		assertEquals(listOf(pendingSpaceId), pending.personalSpaceIds)
+		// 대기 공간이 없는 상대는 거부된다
+		assertApiError(ErrorCode.NO_IMPORT_PENDING) { policy.requireImportPending(partnerId) }
+	}
+
+	@Test
+	fun `R-18 대기 중인 개인 공간이 없으면 가져오기(requireImportPending)를 409 NO_IMPORT_PENDING으로 거부한다`() {
+		// 게스트·회원 구분 없이 개인 공간 사용자
+		val (guestId, _) = userWithPersonalSpace("GUEST")
+		val (memberId, _) = userWithPersonalSpace("MEMBER")
+		// 커플 공간에 있지만 대기 공간이 없는 사용자
+		val coupledId = insertUser("MEMBER")
+		val coupleSpaceId = insertSpace("COUPLE")
+		insertMember(coupleSpaceId, coupledId)
+
+		assertApiError(ErrorCode.NO_IMPORT_PENDING) { policy.requireImportPending(guestId) }
+		assertApiError(ErrorCode.NO_IMPORT_PENDING) { policy.requireImportPending(memberId) }
+		assertApiError(ErrorCode.NO_IMPORT_PENDING) { policy.requireImportPending(coupledId) }
+		assertEquals(409, ErrorCode.NO_IMPORT_PENDING.status.value())
+	}
+
+	@Test
+	fun `R-18 활성 개인 공간 소속은 가져오기 대기 공간으로 세지 않는다`() {
+		// 해제로 되살아난 개인 공간(left_at 없음)과 해제된 커플 공간의 떠난 소속
+		val userId = insertUser("MEMBER")
+		val personalSpaceId = insertSpace("PERSONAL")
+		insertMember(personalSpaceId, userId)
+		val unlinkedCoupleSpaceId = insertSpace("COUPLE", unlinked = true)
+		insertMember(unlinkedCoupleSpaceId, userId, left = true)
+
+		assertApiError(ErrorCode.NO_IMPORT_PENDING) { policy.requireImportPending(userId) }
+	}
+
 	// ── R-11 ────────────────────────────────────────────
 
 	@Test

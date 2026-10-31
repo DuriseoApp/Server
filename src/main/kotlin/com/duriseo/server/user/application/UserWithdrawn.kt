@@ -7,7 +7,8 @@ import java.util.UUID
  *
  * - [kakaoProviderUserId]: Kakao 회원이면 연결 끊기에 쓸 ID. 소셜 계정 행을 지우기 전에 읽은 값이다. 로그에 남기지 않는다.
  * - [nicknameBeforeWithdrawal], [partnerUserId], [profileImageKey]: 단위 6(탈퇴 해제 알림·푸시·SYNC)과 단위 7(프로필 사진 파일 삭제)이
- *   커밋 뒤에 쓴다. 익명화 전 값이다. 커플 해제는 단위 2가 채우기 전까지 [partnerUserId]는 항상 null이다.
+ *   커밋 뒤에 쓴다. 익명화 전 값이다. [partnerUserId]는 탈퇴로 연결이 해제된 상대(커플이 아니었으면 null)다. 같은 해제는 `CoupleUnlinked`
+ *   (`byWithdrawal = true`)로도 발행된다. 단위 6은 둘 중 한쪽에서만 상대에게 신호를 보낸다.
  */
 data class UserWithdrawn(
 	val userId: UUID,

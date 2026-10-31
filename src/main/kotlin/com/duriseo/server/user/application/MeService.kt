@@ -8,6 +8,7 @@ import com.duriseo.server.user.domain.UserRepository
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.time.temporal.ChronoUnit
 import java.util.UUID
 
 @Service
@@ -39,6 +40,7 @@ class MeService(
 			timeZone = user.timeZone,
 			providers = socialAccounts.findAllByUserId(userId).map { it.provider }.sorted(),
 			hasProfileImage = user.profileImageKey != null,
+			createdAt = user.createdAt.truncatedTo(ChronoUnit.SECONDS),
 			space = MeSpaceView(
 				id = space.spaceId,
 				type = space.type,

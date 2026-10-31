@@ -85,6 +85,20 @@ class MeTest : IntegrationTestSupport() {
 	}
 
 	@Test
+	fun `FR-SET-01 GET me는 가입일 createdAt을 users created_at 그대로 돌려준다`() {
+		val tokens = startGuest()
+		getMe(tokens.accessToken).andExpect(jsonPath("$.createdAt").value("2026-10-26T00:00:00Z"))
+
+		// 게스트가 연동한 회원도 게스트로 시작한 시각이다 (계정이 그대로이므로)
+		clock.advance(Duration.ofMinutes(30))
+		makeMember(tokens.userId)
+
+		getMe(tokens.accessToken)
+			.andExpect(jsonPath("$.accountType").value("MEMBER"))
+			.andExpect(jsonPath("$.createdAt").value("2026-10-26T00:00:00Z"))
+	}
+
+	@Test
 	fun `FR-COUPLE-02 AC5 GET me는 커플 공간이면 COUPLE 종류와 상대·사람 색을 돌려준다`() {
 		val tokens = startGuest()
 		makeMember(tokens.userId)

@@ -8,7 +8,7 @@
 | 키트 2 | DB: ERD 15개 테이블 Flyway V1, 마이그레이션 테스트 | ERD 3장 | 완료 |
 | 키트 3 | 인프라: AWS 서버 1대용 Docker Compose(dev 앱, prod 앱, PostgreSQL), DB 백업(S3), GitHub Actions 배포. Docs ERD Q-D2 표현 수정 요청 | ERD 7장, Docs `config` | 완료 |
 | 1 | 계정: 게스트 시작, 소셜 로그인(Google·카카오 검증), 게스트 연동·기존 계정 로그인, refresh(`sid`, 한 기기), 로그아웃, 탈퇴, 내 정보·프로필, `SpaceAccessPolicy`와 R- 규칙 테스트 | FR-AUTH, API 3.1·4.1~4.3·4.6~4.7, R-01·R-09·R-11·R-14·R-17 | PR 완료 |
-| 2 | 커플: 초대코드, 연결(행 잠금, SYNC `LINKED`), 기록 가져오기, 해제·복구, 처음 만난 날, 사람 색 | FR-COUPLE, FR-CAL-04, API 3.2·4.4·4.5 | 대기 |
+| 2 | 커플: 초대코드, 연결(행 잠금, 커밋 뒤 `CoupleLinked` 이벤트. SYNC `LINKED` 발송은 단위 6), 기록 가져오기, 해제·복구, 처음 만난 날, 사람 색, 탈퇴 때 연결 해제(단위 1 연결점), Kakao 연결 해제 웹훅 | FR-COUPLE, FR-CAL-04, FR-AUTH-06 AC2·AC4, API 3.2·3.6·4.4·4.5·4.8, R-08·R-09·R-18 | PR 완료 |
 | 배포 1 | 단위 2까지 AWS dev에 배포해 두 기기로 연결 확인. 전에 사용자가 `docs/SETUP.md` 3장(AWS·DuckDNS·GitHub 환경)을 마쳐야 한다 | 키트 3 | 대기 |
 | 3 | 캘린더: 일정, 일정 알림, 날짜 범위 | FR-CAL, API 3.3, R-02·R-07·R-10·R-13·R-15 | 대기 |
 | 4 | 기념일: 자동 기념일 계산, 직접 기념일, 목록 2종 | FR-ANNIV, API 3.3 | 대기 |

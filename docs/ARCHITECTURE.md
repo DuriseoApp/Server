@@ -49,6 +49,7 @@ com.duriseo.server
 
 - 여러 테이블을 바꾸는 흐름(API.md 4장)은 서비스 메서드 하나의 트랜잭션에서 처리한다.
 - 두 사람이 동시에 움직일 수 있는 흐름(커플 연결, 초대코드)은 행 잠금(`SELECT … FOR UPDATE`)으로 순서를 보장한다.
+- **잠금 순서는 모든 흐름에서 같다: users(UUID 오름차순) → invite_codes → spaces.** 공간 행을 잡은 채 사용자 행을 잠그는 흐름을 두지 않는다. 알림·소속 같은 행을 넣을 때의 외래 키 검사가 그 사용자 행에 `FOR KEY SHARE`를 요구해서, 사용자 행을 `FOR UPDATE`로 잡은 쪽과 교착하기 때문이다. 연결 해제와 탈퇴는 본인과 상대 사용자 행을 UUID 순서로 먼저 잠그고 공간 행을 잠근다 (`UserService.lockForUpdateWithPartner`). 같은 이유로 `invite_code_attempts` 같은 외래 키 행을 `REQUIRES_NEW`로 넣지 않는다 (바깥 트랜잭션이 잡은 사용자 행을 기다리는 자기 교착).
 - 동기화 신호·푸시는 **커밋이 끝난 뒤** 보낸다 (`@TransactionalEventListener(phase = AFTER_COMMIT)`). 트랜잭션 안에서 외부 호출을 하지 않는다. 카카오 연결 끊기도 커밋 뒤에 한다.
 
 ## 5. 오류 모델

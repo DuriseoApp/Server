@@ -4,12 +4,14 @@ import com.duriseo.server.auth.application.SessionService
 import com.duriseo.server.common.api.ApiException
 import com.duriseo.server.common.api.ErrorCode
 import com.duriseo.server.common.time.nowInSeconds
+import com.duriseo.server.couple.application.CoupleUnlinkService
 import com.duriseo.server.space.application.SpaceService
-import com.duriseo.server.space.domain.SpaceType
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Propagation
+import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 import java.time.Clock
 import java.util.UUID
 
@@ -23,31 +25,40 @@ class WithdrawalService(
 	private val userService: UserService,
 	private val socialAccountService: SocialAccountService,
 	private val spaceService: SpaceService,
+	private val coupleUnlinkService: CoupleUnlinkService,
 	private val sessionService: SessionService,
 	private val deviceService: DeviceService,
 	private val dataEraser: WithdrawalDataEraser,
 	private val events: ApplicationEventPublisher,
 	private val clock: Clock,
+	transactionManager: PlatformTransactionManager,
 ) {
 
-	/** `DELETE /me`: 로그인한 사용자 누구나(게스트 포함) 탈퇴할 수 있다 */
-	@Transactional
+	private val tx = TransactionTemplate(transactionManager)
+
+	/**
+	 * `DELETE /me`: 로그인한 사용자 누구나(게스트 포함) 탈퇴할 수 있다.
+	 * 잠그는 동안 커플 상대가 바뀌면 트랜잭션을 롤백하고 처음부터 다시 한다 ([PartnerLockRetry]).
+	 */
 	fun withdraw(userId: UUID) {
-		eraseInTransaction(userId)
+		PartnerLockRetry.run { tx.executeWithoutResult { eraseInTransaction(userId) } }
 	}
 
-	/** 이미 열린 트랜잭션 안에서 탈퇴 처리를 한다. 사용자 행을 잠근 뒤 시작한다 */
+	/**
+	 * 이미 열린 트랜잭션 안에서 탈퇴 처리를 한다. 사용자 행과 커플 상대의 행을 UUID 순서로 잠근 뒤 시작한다 (연결 해제와 같은 순서).
+	 * [unlinkFromKakao]가 false면 커밋 뒤 Kakao 연결 끊기를 하지 않는다: Kakao가 이미 연결을 끊은 뒤 부른 웹훅 탈퇴다 (API.md 4.8 6단계).
+	 */
 	@Transactional(propagation = Propagation.MANDATORY)
-	fun eraseInTransaction(userId: UUID) {
-		val user = userService.lockForUpdate(userId)
+	fun eraseInTransaction(userId: UUID, unlinkFromKakao: Boolean = true) {
+		val user = userService.lockForUpdateWithPartner(userId)
 		if (user.deletedAt != null) throw ApiException(ErrorCode.SESSION_INVALID, "user already withdrawn")
 		val nicknameBeforeWithdrawal = user.nickname
 		val profileImageKey = user.profileImageKey
 		// 소셜 계정 행을 지우기 전에 읽어 둔다 (Kakao 연결 끊기에 쓴다)
-		val kakaoProviderUserId = socialAccountService.kakaoProviderUserIdOf(userId)
+		val kakaoProviderUserId = if (unlinkFromKakao) socialAccountService.kakaoProviderUserIdOf(userId) else null
 
-		// 1. 커플 공간이면 연결 해제 (단위 2가 채운다)
-		val partnerUserId = unlinkCoupleBeforeWithdrawal(userId)
+		// 1. 커플 공간이면 연결 해제하고 상대에게 탈퇴 전용 COUPLE_UNLINKED 알림을 만든다
+		val partnerUserId = coupleUnlinkService.unlinkForWithdrawal(userId, nicknameBeforeWithdrawal)
 		// 2. 속했던 UNLINKED 커플 공간을 탈퇴 시각 + 90일까지 보관
 		spaceService.extendPurgeOfUnlinkedSpacesForWithdrawal(userId)
 		// 3. 개인 공간과 가져오기 대기 중인 개인 공간 삭제 (콘텐츠·공간 알림은 CASCADE)
@@ -56,20 +67,9 @@ class WithdrawalService(
 		sessionService.revokeAndDeleteAllForWithdrawal(userId)
 		deviceService.deleteAllOf(userId)
 		dataEraser.eraseUserRows(userId)
-		user.anonymize(clock.nowInSeconds())
+		// 해제와 알림·초대코드 삭제가 영속성 컨텍스트를 비워 앞에서 읽은 엔티티는 더 이상 추적되지 않는다. 같은 잠금을 다시 잡아 새로 읽는다
+		userService.lockForUpdate(userId).anonymize(clock.nowInSeconds())
 
 		events.publishEvent(UserWithdrawn(userId, nicknameBeforeWithdrawal, profileImageKey, partnerUserId, kakaoProviderUserId))
-	}
-
-	/**
-	 * 탈퇴 1단계 (ERD 4.3): 커플 공간에 있으면 4.5로 연결 해제하고, 상대에게 탈퇴 전용 `COUPLE_UNLINKED` 알림을 만든다.
-	 * 연결 해제는 단위 2, 알림 푸시·SYNC는 단위 6이 채운다. 돌려주는 값은 상대의 사용자 ID다.
-	 * 단위 2가 오기 전에는 커플 공간이 생길 수 없으므로 만나면 데이터 오류로 보고 실패시킨다 (탈퇴 전체가 롤백된다).
-	 */
-	private fun unlinkCoupleBeforeWithdrawal(userId: UUID): UUID? {
-		check(spaceService.activeSpaceType(userId) != SpaceType.COUPLE) {
-			"withdrawal of a user in a couple space needs the unlink step (unit 2)"
-		}
-		return null
 	}
 }

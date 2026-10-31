@@ -33,7 +33,7 @@ class MutableClock(initial: Instant) : Clock() {
 
 /** 통합 테스트가 `@Import` 한다. 운영 `Clock` 빈 대신 이 시계를 쓰고, 소셜 가짜(`TestSocialConfig`)도 함께 가져온다 */
 @TestConfiguration(proxyBeanMethods = false)
-@Import(TestSocialConfig::class)
+@Import(TestSocialConfig::class, TestCoupleConfig::class)
 class TestClockConfig {
 
 	@Bean
