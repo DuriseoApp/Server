@@ -125,12 +125,11 @@ docker logs duriseo-prod-app-1 2>&1 | grep "Kakao unlink notice was not processe
 - 같은 `traceId`로 `grep <traceId>`하면 줄 바로 아래에 오류 원인(예외와 스택)이 있어요. 트랜잭션은 롤백돼서 사용자 데이터는 알림이 오기 전 그대로예요.
 - 인증 실패(401 `WEBHOOK_UNAUTHORIZED`)는 이 ERROR와 달라요. Kakao 개발자 콘솔에 등록한 어드민 키·앱 ID가 서버 설정(`KAKAO_ADMIN_KEY`, `KAKAO_APP_ID`)과 다르면 모든 알림이 401이 돼요. 서버 설정에 어드민 키가 비어 있어도 마찬가지예요.
 
-**다시 처리하기**: 원인을 고친 뒤 같은 알림을 서버에 다시 보내요. 같은 알림이 여러 번 와도 결과가 같아서(이미 처리했거나 모르는 사용자면 아무것도 안 해요) 안전해요. 어드민 키가 화면과 셸 기록에 남지 않게 컨테이너 안의 환경변수를 써요.
+**다시 처리하기**: 원인을 고친 뒤 같은 알림을 서버에 다시 보내요. 같은 알림이 여러 번 와도 결과가 같아서(이미 처리했거나 모르는 사용자면 아무것도 안 해요) 안전해요. 어드민 키가 명령 인자(`ps`에 보여요)나 셸 기록에 남지 않게, 컨테이너 안의 환경변수로 만든 헤더를 **표준 입력**(`-H @-`)으로 넘겨요.
 
 ```bash
-docker exec duriseo-prod-app-1 sh -c 'curl -s -o /dev/null -w "%{http_code}\n" -X POST \
-  http://localhost:8080/api/v1/webhooks/kakao/unlink \
-  -H "Authorization: KakaoAK $KAKAO_ADMIN_KEY" \
+docker exec duriseo-prod-app-1 sh -c 'printf "Authorization: KakaoAK %s\n" "$KAKAO_ADMIN_KEY" | curl -s -o /dev/null -w "%{http_code}\n" -X POST \
+  http://localhost:8080/api/v1/webhooks/kakao/unlink -H @- \
   -d "app_id=$KAKAO_APP_ID" -d "user_id=<로그의 Kakao 회원번호>" -d "referrer_type=<로그의 값>"'
 ```
 

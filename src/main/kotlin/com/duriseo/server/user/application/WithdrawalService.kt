@@ -9,7 +9,9 @@ import com.duriseo.server.space.application.SpaceService
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Propagation
+import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 import java.time.Clock
 import java.util.UUID
 
@@ -29,12 +31,17 @@ class WithdrawalService(
 	private val dataEraser: WithdrawalDataEraser,
 	private val events: ApplicationEventPublisher,
 	private val clock: Clock,
+	transactionManager: PlatformTransactionManager,
 ) {
 
-	/** `DELETE /me`: 로그인한 사용자 누구나(게스트 포함) 탈퇴할 수 있다 */
-	@Transactional
+	private val tx = TransactionTemplate(transactionManager)
+
+	/**
+	 * `DELETE /me`: 로그인한 사용자 누구나(게스트 포함) 탈퇴할 수 있다.
+	 * 잠그는 동안 커플 상대가 바뀌면 트랜잭션을 롤백하고 처음부터 다시 한다 ([PartnerLockRetry]).
+	 */
 	fun withdraw(userId: UUID) {
-		eraseInTransaction(userId)
+		PartnerLockRetry.run { tx.executeWithoutResult { eraseInTransaction(userId) } }
 	}
 
 	/**

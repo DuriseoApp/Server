@@ -1,6 +1,6 @@
 # 단위 2: 커플 (couple)
 
-> 브랜치: `feat/2-couple` · PR: (링크) · 상태: 리뷰 중 (구현 1부·2부 완료. 1부: 초대코드·연결·공간·색·`Me.createdAt`, 2부: `POST /couple/import`, `DELETE /couple`, R-18, 탈퇴 연결점, Kakao 연결 해제 웹훅, `WithdrawalDataEraser` 정리)
+> 브랜치: `feat/2-couple` · PR: https://github.com/DuriseoApp/Server/pull/7 · 상태: 리뷰 중 (구현 1부·2부 완료. 1부: 초대코드·연결·공간·색·`Me.createdAt`, 2부: `POST /couple/import`, `DELETE /couple`, R-18, 탈퇴 연결점, Kakao 연결 해제 웹훅, `WithdrawalDataEraser` 정리)
 > 기준: PRD v0.8 (FR-COUPLE-01~06, FR-CAL-04, FR-AUTH-06 AC2·AC4, NFR-SEC-02·03, D-05~08, D-36, D-37, D-42, D-45, D-47~49, D-53, D-61, D-72, D-74, D-76, D-78, D-83~85, D-87), API.md 1장·1.1·2장(R-01·R-08·R-09·R-15·R-18)·3.2·3.6·4.4·4.5·4.6·4.8·5장·6장·7장, ERD 3.1(notifications)·3.2·4.1·4.2·4.3·4.5·5장(DB-03·04·05·07·08·13·15·16)
 > Docs 기준 커밋: DuriseoApp/Docs main `afc3d1b` (PRD v0.8, Docs PR #9 머지). 처음 범위를 잡을 때는 `b992123`(PRD v0.7)였다.
 
@@ -272,7 +272,7 @@ ARCHITECTURE 4장: 두 사람이 동시에 움직이는 흐름은 `SELECT … FO
 
 1. **JPA 쓰기 순서와 부분 UNIQUE.** Hibernate는 flush 때 INSERT를 UPDATE보다 먼저 보낸다. 연결에서 "개인 공간 소속 `left_at` 기록 → 커플 소속 INSERT", 해제에서 "커플 소속 `left_at` → 대기 공간 `left_at` null"을 그대로 엔티티로 하면 `uq_space_members_active_user` 위반(500)이 난다. 부분 UNIQUE 인덱스는 지연(DEFERRABLE)할 수 없다. 단계 사이에 명시적 `flush()`를 하거나 JPQL 일괄 UPDATE(`flushAutomatically`)를 쓰고, 순서 테스트를 둔다.
 2. **코드 충돌 재시도.** `uq_invite_codes_code` 위반은 PostgreSQL 트랜잭션을 실패 상태로 만들어 같은 트랜잭션에서 다시 INSERT할 수 없다. 넣기 전에 존재를 확인하거나 `INSERT … ON CONFLICT (code) DO NOTHING`으로 재시도한다 (31^6 ≈ 8.9억이라 충돌은 드물다).
-3. **실패 시도 기록과 롤백.** 거부는 `ApiException`이라 트랜잭션이 롤백되므로 실패 시도 INSERT도 사라진다. 시도 기록은 별도 트랜잭션(`REQUIRES_NEW`)에 넣는다. 이때 바깥 트랜잭션이 잡은 users 행 잠금과 겹치지 않는지(시도 테이블은 users를 잠그지 않음) 확인한다.
+3. **실패 시도 기록과 롤백.** 거부는 `ApiException`이라 트랜잭션이 롤백되므로 실패 시도 INSERT도 사라진다. 시도 기록은 별도 트랜잭션(`REQUIRES_NEW`)에 넣는다. 이때 바깥 트랜잭션이 잡은 users 행 잠금과 겹치지 않는지(시도 테이블은 users를 잠그지 않음) 확인한다. **→ 1부 결정으로 대체됨: 이 메모의 마지막 확인("시도 테이블은 users를 잠그지 않음")이 틀렸다. 외래 키 검사가 요청자 `users` 행에 `FOR KEY SHARE`를 요구해 `REQUIRES_NEW`는 자기 교착이다. "구현 1부에서 정한 것"의 첫 항목 참고.**
 4. **오입력 횟수 경쟁.** 같은 사용자의 입력이 동시에 오면 9회 상태에서 둘 다 통과할 수 있다. 요청자 users 행을 잠근 뒤 횟수를 세면 순서가 정해진다.
 
 ## 단위 1 연결점 (2부에서 모두 완성함)
@@ -316,7 +316,7 @@ API 7장: "모든 알림 작업은 받는 사람마다 `notifications` 행을 **
 - 탈퇴로 인한 해제에서 탈퇴하는 사람에게는 새 개인 공간을 만들지 않는다 (바로 다음 3단계가 지우므로 결과는 ERD 4.3과 같다). 상대는 4.2대로 되살리거나 만든다.
 - 탈퇴 해제의 닉네임은 `WithdrawalService`가 익명화 전에 읽은 값을 couple 서비스에 넘긴다 (couple → user 의존을 만들지 않으려고).
 - 알림 문구는 PRD 8장 그대로 서버 상수로 둔다. `[상대 이름]`은 받는 사람 기준의 상대 닉네임(연결 시점 값).
-- 실패 시도 기록은 `REQUIRES_NEW` 트랜잭션. 성공 시도는 연결 트랜잭션 안에서 함께 기록.
+- ~~실패 시도 기록은 `REQUIRES_NEW` 트랜잭션. 성공 시도는 연결 트랜잭션 안에서 함께 기록.~~ **1부 결정으로 대체됨**: 아래 "구현 1부에서 정한 것"의 첫 항목(커밋하는 거부)을 따른다. `REQUIRES_NEW`는 자기 교착이라 쓰지 않는다. 성공 시도를 연결 트랜잭션 안에서 기록하는 부분은 그대로다.
 - 초대코드는 `SecureRandom`으로 31자 집합에서 고른다. 충돌하면 최대 몇 번 다시 만든다 (`ON CONFLICT DO NOTHING` 또는 존재 확인).
 - 연결 이벤트·해제 이벤트·공간 변경 이벤트(예: `CoupleLinked`, `CoupleUnlinked(byWithdrawal)`, `SpaceUpdated`)를 트랜잭션 안에서 발행하고, 단위 2에는 리스너가 없다 (단위 6). 테스트는 `@RecordApplicationEvents` 또는 테스트 리스너로 커밋 뒤 전달을 확인한다.
 - 단위 2가 `notification` 패키지에 `Notification` 엔티티와 행 생성 서비스(연결·해제 알림만)를 만들고, `WithdrawalDataEraser`의 `notifications` 삭제를 그 서비스로 옮긴다. 목록·읽음·설정 API는 단위 6.
@@ -340,7 +340,7 @@ API 7장: "모든 알림 작업은 받는 사람마다 `notifications` 행을 **
 
 구현 2부에서 정한 것 (리드 지시와 Docs v0.8 기준, 문서에 없는 구현 결정):
 
-- **해제·탈퇴 해제의 잠금은 users(UUID 순서, 본인+상대) → 공간이다.** 위 5장 표의 이유 참고. `UserService.lockForUpdateWithPartner`가 상대를 잠금 없이 먼저 읽어 둘을 UUID 순서로 잠그고, 잠근 뒤 상대가 바뀌었으면 새 상대도 이어서 잠근다(그 사이 연결된 드문 경우, 순서는 지키지 못할 수 있다). `WithdrawalService.eraseInTransaction`과 `CoupleUnlinkService.unlink`, Kakao 웹훅이 모두 이것으로 시작한다.
+- **해제·탈퇴 해제의 잠금은 users(UUID 순서, 본인+상대) → 공간이다.** 위 5장 표의 이유 참고. `UserService.lockForUpdateWithPartner`가 상대를 잠금 없이 먼저 읽어 둘을 UUID 순서로 잠그고, 잠근 뒤 상대가 바뀌었으면(그 사이 연결·해제된 드문 경우) 새 상대를 이어서 잠그지 않고 `PartnerChangedException`으로 트랜잭션을 롤백한 뒤 처음부터 다시 잠근다(`PartnerLockRetry`, 최대 3번 다시. 해제·탈퇴·웹훅의 `TransactionTemplate`을 감싼다). 3번 다시 해도 바뀌면 마지막 시도는 새 상대를 이어서 잠그는 기존 동작을 하며 이때만 UUID 순서가 어긋날 수 있다(한계). 도우미 밖의 호출(게스트 삭제 등)은 다시 시도하지 않는 기존 동작이다. 그래서 `WithdrawalService.withdraw`와 `CoupleUnlinkService.unlink`는 `@Transactional` 대신 `TransactionTemplate`을 쓴다. `WithdrawalService.eraseInTransaction`과 `CoupleUnlinkService.unlink`, Kakao 웹훅이 모두 이것으로 시작한다.
 - **`CoupleUnlinkService`(couple)가 `DELETE /couple`과 탈퇴 해제를 한 코드로 한다.** 닉네임은 `unlink`에서는 잠근 사용자 엔티티에서, 탈퇴에서는 `WithdrawalService`가 익명화 전에 읽은 값을 넘긴다. 탈퇴하는 사람에게는 새 개인 공간을 만들지 않는다. 해제 이벤트 `CoupleUnlinked(spaceId, unlinkedByUserId, partnerUserId, byWithdrawal, notificationId)`를 해제 트랜잭션 안에서 발행한다(탈퇴 해제도 `byWithdrawal = true`로 발행하고 `UserWithdrawn.partnerUserId`도 채운다. 단위 6은 한쪽에서만 보내 상대에게 신호가 두 번 가지 않게 한다).
 - **영속성 컨텍스트:** 해제의 일괄 UPDATE/DELETE는 `clearAutomatically`를 쓴다. 그래서 `WithdrawalService.eraseInTransaction`은 알림·초대코드 삭제 뒤 같은 잠금을 다시 잡아(`lockForUpdate`) 새로 읽은 사용자 엔티티를 익명화한다.
 - **`POST /couple/import`:** R-18(`SpaceAccessPolicy.requireImportPending`: 활성 공간이 `COUPLE`이고 소속에 `left_at`이 있는 PERSONAL 공간이 있을 것)을 잠그기 전에 한 번, 커플 공간 행을 잠근 뒤 한 번 더 부른다. `import` 검사(400)는 첫 R-18 뒤다. 불리언이 아닌 `import`는 `VALIDATION_FAILED`(`import`, `INVALID`) (Docs가 정하지 않은 모양, 1부의 `code`와 같은 판단). 기록 이동은 `CoupleContentGateway`의 네이티브 SQL(`space_id`만 바꾼다)이고 단위 3·4·5가 도메인 서비스로 옮긴다.
@@ -352,14 +352,17 @@ API 7장: "모든 알림 작업은 받는 사람마다 `notifications` 행을 **
 
 | 회차 | Critical | Major | 비고 |
 | --- | --- | --- | --- |
+| 1 | 0 | 0 | Minor 7. 머지 가능. 리드 지시로 처리한 것: ① `UserService.lockForUpdateWithPartner`가 잠근 뒤 상대가 바뀌면 이어서 잠그지 않고 롤백·재시도(`PartnerLockRetry`, `PartnerLockRetryTest`) ② `SpaceDetailService.get`이 활성 공간을 `SpaceAccessPolicy.activeSpaceIdOf`로 찾음 ③ `docs/DEPLOY.md` 9장 curl이 어드민 키를 인자 대신 표준 입력(`-H @-`)으로 넘김 ④ 이 진행 기록 정리(PR 링크, 리뷰 기록, 오래된 남은 일, `REQUIRES_NEW` 대체 표시) ⑤ Docs 후속을 남은 일로 옮김(아래). 그대로 둔 것: ⑥ `CoupleContentGateway`의 네이티브 SQL은 ARCHITECTURE 2장의 임시 예외로 단위 3·4·5에서 옮김(남은 일) ⑦ 오입력 실패 기록은 문서의 "연결 트랜잭션과 별도로 커밋"과 달리 거부할 때 시도 행만 넣고 같은 트랜잭션을 커밋한 뒤 오류를 던짐(결과는 같고 자기 교착을 피함) → Docs 문구 후속(남은 일) |
 
 ## 남은 일
 
-- 사용자: CI 결과 확인 (이 환경은 Gradle을 못 돌려 2부 컴파일·테스트는 CI가 처음 돌린다. 1부는 CI 초록, 테스트 312개 통과)
 - 사용자: Kakao Developers 앱 › 웹훅 › 연결 해제 웹훅에 서버 주소를 등록 (서버 배포 뒤, 사람이 할 일, `docs/DEPLOY.md` 9장). 서버 설정의 `KAKAO_ADMIN_KEY`가 비어 있으면 웹훅은 모두 401이다
 - 단위 3·4·5: 단위 2의 콘텐츠 네이티브 SQL(개수 확인, `space_id` 이동, `event_reminders` 삭제)을 각 도메인 서비스로 옮기기. 단위 5·3: `WithdrawalDataEraser`의 `memo_favorites`·`event_reminders` 삭제를 옮기기
 - 단위 6: `CoupleLinked`·`CoupleUnlinked`·`SpaceUpdated`·`UserWithdrawn`을 듣는 푸시·SYNC(`LINKED`·`UNLINKED` 포함), `purge_at`·초대코드·시도 정리 작업. 탈퇴 해제는 `CoupleUnlinked`(`byWithdrawal`)와 `UserWithdrawn.partnerUserId` 두 곳에 담겨 있으니 한쪽에서만 보낸다
 - Android: 초대코드·연결·가져오기·해제·공간 응답 모양은 API.md 3.2, 오류 우선순위·`retryAfterSeconds`는 4.4
+- 단위 3·4·5: `CoupleContentGateway`(개수 확인, `space_id` 이동, `event_reminders` 삭제의 네이티브 SQL)를 각 도메인 서비스로 옮기고 이 클래스를 없애기 (위 항목과 같은 일, ARCHITECTURE 2장의 임시 예외 해소)
+- **Docs 후속 (다음 `/prd-sync`, 코드는 그대로):** 연결로 무효가 된(DB-16) 코드는 탈퇴 때 지워지지 않는다(탈퇴 삭제는 `used_at`·`revoked_at`이 null인 유효한 코드만). 그래서 만든 사람이 탈퇴한 뒤 그 코드를 입력하면 `INVITE_EXPIRED`가 나가는데, API.md 4.4 2단계 표 9번과 5장은 "탈퇴한 사람의 코드는 `INVITE_NOT_FOUND`"라고 한다. 문구를 "탈퇴한 사람의 **유효한** 코드는 지워져 `INVITE_NOT_FOUND`, 이미 무효가 된 코드는 `INVITE_EXPIRED`"로 고친다
+- **Docs 후속 (다음 `/prd-sync`, 코드는 그대로):** API.md 4.4 2단계·ERD 3.2의 오입력 실패 기록 "연결 트랜잭션과 별도로 커밋"을 구현에 맞춰 "거부할 때는 시도 행만 넣고 커밋한 뒤 오류를 돌려준다(연결은 바꾸지 않음)"로 고친다
 
 ## 확인 필요 (모두 해결됨 — 위 "확인 필요 해결" 절)
 

@@ -5,11 +5,14 @@ import com.duriseo.server.common.time.nowInSeconds
 import com.duriseo.server.notification.application.NotificationService
 import com.duriseo.server.space.application.SpaceService
 import com.duriseo.server.space.domain.SpaceType
+import com.duriseo.server.user.application.PartnerLockRetry
 import com.duriseo.server.user.application.UserService
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Propagation
+import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 import java.time.Clock
 import java.util.UUID
 
@@ -31,11 +34,20 @@ class CoupleUnlinkService(
 	private val notifications: NotificationService,
 	private val events: ApplicationEventPublisher,
 	private val clock: Clock,
+	transactionManager: PlatformTransactionManager,
 ) {
 
-	/** `DELETE /couple`: 개인 공간이면 409 `NOT_COUPLE`. 해제한 사람 자신에게는 알림을 만들지 않는다 (API.md 4.5 5단계) */
-	@Transactional
+	private val tx = TransactionTemplate(transactionManager)
+
+	/**
+	 * `DELETE /couple`: 개인 공간이면 409 `NOT_COUPLE`. 해제한 사람 자신에게는 알림을 만들지 않는다 (API.md 4.5 5단계).
+	 * 잠그는 동안 상대가 바뀌면 트랜잭션을 롤백하고 처음부터 다시 한다 ([PartnerLockRetry]).
+	 */
 	fun unlink(requesterId: UUID) {
+		PartnerLockRetry.run { tx.executeWithoutResult { unlinkInTransaction(requesterId) } }
+	}
+
+	private fun unlinkInTransaction(requesterId: UUID) {
 		policy.requireCoupleSpace(requesterId)
 		val requester = userService.lockForUpdateWithPartner(requesterId)
 		// 잠근 뒤 다시 확인한다: 상대가 먼저 해제했으면 이제 개인 공간이라 409 NOT_COUPLE
