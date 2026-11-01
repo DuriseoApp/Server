@@ -56,7 +56,9 @@ data class MeSpaceResponse(
 			partner = view.partner?.let { MePartnerResponse.from(it) },
 			togetherColor = view.togetherColor,
 			startDate = view.startDate,
+			linkedAt = view.linkedAt,
 			importPending = view.importPending,
+			importCounts = view.importCounts?.let { ImportCountsResponse.from(it) },
 		)
 	}
 }

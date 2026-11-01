@@ -67,8 +67,10 @@ class SpaceService(
 			myColor = membership.color,
 			togetherColor = space.togetherColor,
 			startDate = space.startDate,
+			linkedAt = if (space.type == SpaceType.COUPLE) space.linkedAt else null,
 			partner = if (space.type == SpaceType.COUPLE) partner else null,
-			importPending = members.countLeftSpacesOfType(userId, SpaceType.PERSONAL) > 0,
+			importPending = pendingImportSpaceIds.isNotEmpty(),
+			pendingImportSpaceIds = pendingImportSpaceIds,
 		)
 	}
 
