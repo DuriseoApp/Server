@@ -14,7 +14,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 /**
- * Flyway V1이 실제 PostgreSQL 16에 적용되고, ERD 3장의 "제약" 열이 DB에서 지켜지는지 확인한다.
+ * Flyway V1·V2가 실제 PostgreSQL 16에 적용되고, ERD 3장의 "제약" 열이 DB에서 지켜지는지 확인한다.
  * "서비스"로 표시된 규칙은 여기서 보지 않는다 (각 작업 단위의 서비스 테스트가 본다).
  */
 @SpringBootTest
@@ -30,12 +30,12 @@ class SchemaMigrationTest {
 	}
 
 	@Test
-	fun `V1이 적용되어 ERD의 15개 테이블이 있다`() {
+	fun `V2까지 적용되어 ERD의 15개 테이블이 있다`() {
 		val version = jdbc.queryForObject(
 			"select max(version) from flyway_schema_history where success",
 			String::class.java,
 		)
-		assertEquals("1", version)
+		assertEquals("2", version)
 
 		val tables = jdbc.queryForList(
 			"""
@@ -87,15 +87,29 @@ class SchemaMigrationTest {
 			jdbc.update("insert into spaces (id, type, start_date) values (?, 'PERSONAL', date '2024-01-01')", uuid())
 		}
 		assertViolates("ck_spaces_unlinked_columns") {
-			jdbc.update("insert into spaces (id, type, status, unlinked_at) values (?, 'COUPLE', 'UNLINKED', now())", uuid())
+			jdbc.update("insert into spaces (id, type, status, linked_at, unlinked_at) values (?, 'COUPLE', 'UNLINKED', now(), now())", uuid())
 		}
 		jdbc.update(
 			"""
-			insert into spaces (id, type, status, unlinked_at, purge_at)
-			values (?, 'COUPLE', 'UNLINKED', now(), now() + interval '30 days')
+			insert into spaces (id, type, status, linked_at, unlinked_at, purge_at)
+			values (?, 'COUPLE', 'UNLINKED', now(), now(), now() + interval '30 days')
 			""".trimIndent(),
 			uuid(),
 		)
+	}
+
+	@Test
+	fun `연결한 날 linked_at은 커플 공간만 가지고 커플 공간은 늘 가진다`() {
+		// 개인 공간은 linked_at이 null이어야 한다 (기존 CHECK를 linked_at까지 넣어 다시 만든 것)
+		assertViolates("ck_spaces_couple_only_columns") {
+			jdbc.update("insert into spaces (id, type, linked_at) values (?, 'PERSONAL', now())", uuid())
+		}
+		// 커플 공간은 linked_at이 not null이어야 한다 (새 CHECK)
+		assertViolates("ck_spaces_couple_linked_at") {
+			jdbc.update("insert into spaces (id, type) values (?, 'COUPLE')", uuid())
+		}
+		jdbc.update("insert into spaces (id, type, linked_at) values (?, 'COUPLE', now())", uuid())
+		jdbc.update("insert into spaces (id, type) values (?, 'PERSONAL')", uuid())
 	}
 
 	@Test
@@ -161,7 +175,12 @@ class SchemaMigrationTest {
 	}
 
 	private fun space(type: String): UUID = uuid().also {
-		jdbc.update("insert into spaces (id, type) values (?, ?)", it, type)
+		// 커플 공간은 linked_at이 있어야 한다 (ERD 3.2, V2)
+		if (type == "COUPLE") {
+			jdbc.update("insert into spaces (id, type, linked_at) values (?, 'COUPLE', now())", it)
+		} else {
+			jdbc.update("insert into spaces (id, type) values (?, ?)", it, type)
+		}
 	}
 
 	private fun member(space: UUID, user: UUID): UUID = uuid().also {

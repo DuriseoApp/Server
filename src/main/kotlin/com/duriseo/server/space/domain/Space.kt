@@ -28,6 +28,10 @@ class Space(type: SpaceType, now: Instant) : UuidEntity() {
 	@Column(name = "together_color", length = 20)
 	var togetherColor: String? = null
 
+	/** 커플 공간이 연결된 시각. 복구하면 다시 연결한 시각이다. 개인 공간은 null (ERD 3.2, DB-17) */
+	@Column(name = "linked_at")
+	var linkedAt: Instant? = null
+
 	@Column(name = "unlinked_at")
 	var unlinkedAt: Instant? = null
 

@@ -70,9 +70,15 @@ interface SpaceRepository : JpaRepository<Space, UUID> {
 	@Query("delete from Space s where s.id = :id")
 	fun deleteSpaceById(@Param("id") id: UUID): Int
 
-	/** UNLINKED 공간을 다시 [status]로 돌린다: `unlinked_at`, `purge_at`을 비운다 (FR-COUPLE-06). 영속성 컨텍스트를 비운다 */
+	/**
+	 * UNLINKED 공간을 다시 [status]로 돌린다: `unlinked_at`, `purge_at`을 비우고 `linked_at` = [now](다시 연결한 시각)로 바꾼다
+	 * (FR-COUPLE-06, API.md 4.4 4단계, ERD 4.2, D-94). 영속성 컨텍스트를 비운다
+	 */
 	@Modifying(flushAutomatically = true, clearAutomatically = true)
-	@Query("update Space s set s.status = :status, s.unlinkedAt = null, s.purgeAt = null, s.updatedAt = :now where s.id = :id")
+	@Query(
+		"update Space s set s.status = :status, s.unlinkedAt = null, s.purgeAt = null, s.linkedAt = :now, s.updatedAt = :now " +
+			"where s.id = :id",
+	)
 	fun reactivate(@Param("id") id: UUID, @Param("status") status: SpaceStatus, @Param("now") now: Instant): Int
 
 	/**

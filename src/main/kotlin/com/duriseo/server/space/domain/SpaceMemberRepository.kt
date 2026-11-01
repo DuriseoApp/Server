@@ -21,6 +21,13 @@ interface SpaceMemberRepository : JpaRepository<SpaceMember, UUID> {
 	)
 	fun countLeftSpacesOfType(@Param("userId") userId: UUID, @Param("type") type: SpaceType): Long
 
+	/** 소속에 `left_at`이 있는 [type] 공간의 ID. PERSONAL이면 가져오기 대기 중인 개인 공간 (`importCounts`를 셀 때 쓴다, D-93) */
+	@Query(
+		"select s.id from SpaceMember m, Space s " +
+			"where m.spaceId = s.id and m.userId = :userId and m.leftAt is not null and s.type = :type order by s.id",
+	)
+	fun findLeftSpaceIdsOfType(@Param("userId") userId: UUID, @Param("type") type: SpaceType): List<UUID>
+
 	/** 사용자의 활성 공간 종류. 엔티티를 읽어 영속성 컨텍스트에 남기지 않으려고 값만 읽는다. 활성 소속이 없으면 null */
 	@Query(
 		"select s.type from SpaceMember m, Space s " +

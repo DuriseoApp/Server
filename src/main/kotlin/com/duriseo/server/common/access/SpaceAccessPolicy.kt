@@ -100,6 +100,34 @@ class SpaceAccessPolicy(private val em: EntityManager) {
 	}
 
 	/**
+	 * R-02: 일정 수정·삭제는 요청자 = `author_id`이거나 `is_together = true`일 때만. 아니면 403 `NOT_AUTHOR`.
+	 * 일정 엔티티를 모르는 `common`이라 값만 받는다. R-01(404)을 통과한 뒤, 일정 행을 잠근 상태에서 부른다.
+	 */
+	fun requireEventAuthorOrTogether(requesterId: UUID, authorId: UUID, isTogether: Boolean) {
+		if (requesterId != authorId && !isTogether) throw notAuthor()
+	}
+
+	/**
+	 * R-13: 일정 수정에서 `isTogether` 값을 바꾸는 요청은 요청자 = `author_id`일 때만. 아니면 403 `NOT_AUTHOR`.
+	 * 바꾸는 요청인지는 요청의 `isTogether`([requestedIsTogether])를 저장된 값([storedIsTogether])과 비교해 정한다.
+	 * 같은 값이거나 요청에 없으면(null, boolean이 아닌 값 포함) 바꾸지 않는 요청이라 R-02만 적용한다.
+	 */
+	fun requireEventTargetChangeByAuthor(requesterId: UUID, authorId: UUID, storedIsTogether: Boolean, requestedIsTogether: Boolean?) {
+		val changes = requestedIsTogether != null && requestedIsTogether != storedIsTogether
+		if (changes && requesterId != authorId) throw notAuthor()
+	}
+
+	/**
+	 * R-10: 일정 대상은 `isTogether`만 받고, 개인 공간에서 `isTogether = true`면 400 `INVALID_TARGET`.
+	 * [requestedIsTogether]가 null이거나 boolean이 아닌 값(호출한 쪽이 null로 넘긴다)이면 이 규칙은 건너뛰고 값 검사가 응답한다.
+	 */
+	fun requireEventTargetAllowed(userId: UUID, requestedIsTogether: Boolean?) {
+		if (requestedIsTogether != true) return
+		val (_, type) = activeSpaceOf(userId) ?: error("user has no active space")
+		if (type != COUPLE_SPACE_TYPE) throw ApiException(ErrorCode.INVALID_TARGET, "together events need a couple space")
+	}
+
+	/**
 	 * R-11: 프로필 사진 조회는 본인 또는 같은 활성 공간의 구성원만. 아니면 404 `NOT_FOUND`.
 	 * 없는 사용자, 탈퇴한 사용자(`deleted_at` 있음), 다른 공간의 사용자, 연결이 해제된 이전 상대는 모두 같은 404다.
 	 */
@@ -152,6 +180,8 @@ class SpaceAccessPolicy(private val em: EntityManager) {
 	}
 
 	private fun notCouple() = ApiException(ErrorCode.NOT_COUPLE, "not in a couple space")
+
+	private fun notAuthor() = ApiException(ErrorCode.NOT_AUTHOR, "not the author")
 
 	private fun noImportPending() = ApiException(ErrorCode.NO_IMPORT_PENDING, "no personal space is waiting to be imported")
 

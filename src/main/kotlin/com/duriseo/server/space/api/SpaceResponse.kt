@@ -3,6 +3,7 @@ package com.duriseo.server.space.api
 import com.duriseo.server.space.application.SpaceDetail
 import com.duriseo.server.space.application.SpaceMemberDetail
 import com.duriseo.server.space.domain.SpaceType
+import java.time.Instant
 import java.time.LocalDate
 import java.util.UUID
 
@@ -12,6 +13,7 @@ data class SpaceResponse(
 	val type: SpaceType,
 	val togetherColor: String?,
 	val startDate: LocalDate?,
+	val linkedAt: Instant?,
 	val members: List<SpaceMemberResponse>,
 ) {
 	companion object {
@@ -20,6 +22,7 @@ data class SpaceResponse(
 			type = detail.type,
 			togetherColor = detail.togetherColor,
 			startDate = detail.startDate,
+			linkedAt = detail.linkedAt,
 			members = detail.members.map { SpaceMemberResponse.from(it) },
 		)
 	}

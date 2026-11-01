@@ -1,5 +1,6 @@
 package com.duriseo.server.couple.application
 
+import com.duriseo.server.space.application.ImportCounts
 import jakarta.persistence.EntityManager
 import org.springframework.stereotype.Component
 import java.util.UUID
@@ -22,6 +23,22 @@ class CoupleContentGateway(private val em: EntityManager) {
 			.setParameter("spaceId", spaceId)
 			.singleResult as Number
 		return total.toLong() > 0
+	}
+
+	/**
+	 * 가져오기 대기 중인 개인 공간 [spaceIds]의 `events`, `anniversaries`, `memos` 행 수 (`MeSpace.importCounts`, API.md 3.1, D-93).
+	 * 요청 때 세고 저장하지 않는다. 일정은 단위 3 2부에서 일정 서비스로, 기념일·메모는 단위 4·5에서 각 서비스로 옮긴다.
+	 */
+	fun countsOf(spaceIds: Collection<UUID>): ImportCounts {
+		if (spaceIds.isEmpty()) return ImportCounts(0, 0, 0)
+		val row = em.createNativeQuery(
+			"select (select count(*) from events where space_id in (:spaceIds)), " +
+				"(select count(*) from anniversaries where space_id in (:spaceIds)), " +
+				"(select count(*) from memos where space_id in (:spaceIds))",
+		)
+			.setParameter("spaceIds", spaceIds.toList())
+			.singleResult as Array<*>
+		return ImportCounts((row[0] as Number).toInt(), (row[1] as Number).toInt(), (row[2] as Number).toInt())
 	}
 
 	/**
