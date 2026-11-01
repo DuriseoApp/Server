@@ -5,6 +5,7 @@ import com.duriseo.server.common.api.ErrorCode
 import com.duriseo.server.common.api.ListResponse
 import com.duriseo.server.common.web.AuthenticatedUser
 import com.duriseo.server.common.web.CurrentUser
+import com.duriseo.server.event.application.EventReminderService
 import com.duriseo.server.event.application.EventService
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -13,6 +14,7 @@ import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
@@ -21,10 +23,13 @@ import java.util.UUID
 /**
  * 일정 API (API.md 3.3). 권한 검사(R-01·R-02·R-10·R-13)는 서비스가 `SpaceAccessPolicy`로 한다.
  * 쓰기 본문은 "필드 없음"과 `null`을 구분하고 R-01·R-02·R-13·R-10(404·403·400 `INVALID_TARGET`)이 값 검사(400)보다 먼저 나가야 해서
- * `Map`으로 받고 필수로 두지 않는다. 일정 알림 경로(`PUT`·`DELETE /events/{id}/reminder`)는 단위 3 2부.
+ * `Map`으로 받고 필수로 두지 않는다. 일정 알림(`PUT`·`DELETE /events/{id}/reminder`)은 요청자 자신의 알림만 다룬다 (R-07).
  */
 @RestController
-class EventController(private val eventService: EventService) {
+class EventController(
+	private val eventService: EventService,
+	private val reminderService: EventReminderService,
+) {
 
 	/** 날짜 범위의 일정 (FR-CAL-01 AC2). 쿼리 검사는 서비스가 한다: 없어도(400 `REQUIRED`) 서비스가 응답해야 해서 선택으로 받는다 */
 	@GetMapping("/events")
@@ -62,6 +67,22 @@ class EventController(private val eventService: EventService) {
 	@DeleteMapping("/events/{id}")
 	fun delete(@CurrentUser requester: AuthenticatedUser, @PathVariable("id") id: String): ResponseEntity<Void> {
 		eventService.delete(requester.userId, eventIdOf(id))
+		return ResponseEntity.noContent().build()
+	}
+
+	/** 내 알림 설정 (FR-CAL-05). 200과 바뀐 `reminder`가 든 `Event`. 같은 요청을 다시 보내도 같은 결과다 */
+	@PutMapping("/events/{id}/reminder")
+	fun putReminder(
+		@CurrentUser requester: AuthenticatedUser,
+		@PathVariable("id") id: String,
+		@RequestBody(required = false) body: Map<String, Any?>?,
+	): EventResponse =
+		EventResponse.from(reminderService.put(requester.userId, eventIdOf(id), body ?: emptyMap()))
+
+	/** 내 알림 끄기 (FR-CAL-05). 알림이 없어도 204 */
+	@DeleteMapping("/events/{id}/reminder")
+	fun deleteReminder(@CurrentUser requester: AuthenticatedUser, @PathVariable("id") id: String): ResponseEntity<Void> {
+		reminderService.delete(requester.userId, eventIdOf(id))
 		return ResponseEntity.noContent().build()
 	}
 

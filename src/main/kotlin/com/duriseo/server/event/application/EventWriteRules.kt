@@ -24,7 +24,7 @@ data class EventDraft(
 	val startDate: LocalDate?,
 	val endDate: LocalDate?,
 	val isTogether: Boolean,
-	/** 상대에게 알릴지(기본 true). 커플 공간에서만 뜻이 있다. `PARTNER_CREATED` 알림 행은 2부 (FR-NOTI-04) */
+	/** 상대에게 알릴지(기본 true). 커플 공간에서만 뜻이 있다. `PARTNER_CREATED` 알림 행을 만들지 정한다 (FR-NOTI-04, D-92) */
 	val notifyPartner: Boolean,
 )
 
@@ -37,7 +37,7 @@ data class EventPatch(
 	val time: PatchedTime?,
 )
 
-/** 시간 필드를 바꾸는 요청. `isAllDay`와 시작·종료 네 칸을 한꺼번에 다시 정한다. [startChanged]·[allDayChanged]는 2부의 알림 다시 계산(D-91)이 쓴다 */
+/** 시간 필드를 바꾸는 요청. `isAllDay`와 시작·종료 네 칸을 한꺼번에 다시 정한다. [allDayChanged]·[startChanged]는 일정 알림 다시 계산(D-91)이 쓴다 */
 data class PatchedTime(
 	val isAllDay: Boolean,
 	val startAt: Instant?,

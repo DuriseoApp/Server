@@ -98,6 +98,15 @@ class UserService(
 		return locked.getValue(userId)
 	}
 
+	/**
+	 * [userIds]의 사용자 행을 ID 오름차순으로 `FOR KEY SHARE`로 잠근다 (탈퇴·연결 해제의 `FOR UPDATE`가 끝나기를 기다리고 서로는 막지 않는다).
+	 * 일정처럼 공간 행을 참조하는 행을 넣기 전에 부른다. 잠금 순서 users → … → spaces 안에서 사용자 행을 먼저 잡으려는 것이다.
+	 */
+	@Transactional(propagation = Propagation.MANDATORY)
+	fun lockKeyShare(userIds: Collection<UUID>) {
+		if (userIds.isNotEmpty()) users.lockKeyShare(userIds.distinct())
+	}
+
 	/** 공간 구성원 목록이 보여 줄 닉네임·프로필 사진 여부 (`GET /space`, API.md 3.2 `SpaceMember`). 없는 ID는 결과에 없다 */
 	@Transactional(readOnly = true)
 	fun profilesOf(userIds: Collection<UUID>): Map<UUID, UserProfile> =

@@ -549,12 +549,8 @@ class EventWriteTest : EventTestSupport() {
 	fun `FR-CAL-03 AC1 일정을 삭제해도 그 일정을 가리키는 알림 행은 지우지 않는다`() {
 		val couple = newCouple()
 		val id = createEvent(couple.a.accessToken, allDayJson(extra = ""","isTogether":true"""))
-		// 상대 일정 추가 알림처럼 일정을 가리키는 알림 행 (target_id는 FK가 아니다, D-43)
-		jdbc.update(
-			"insert into notifications (id, user_id, space_id, type, title, target_type, target_id, created_at) " +
-				"values (?, ?, ?, 'PARTNER_CREATED', '에이님이 일정을 추가했어요', 'EVENT', ?, ?)",
-			UUID.randomUUID(), couple.b.userId, couple.spaceId, id, Timestamp.from(clock.instant()),
-		)
+		// 만들 때 상대에게 생긴 PARTNER_CREATED 알림 행이 일정을 가리킨다 (target_id는 FK가 아니다, D-43)
+		assertEquals(1, count("select count(*) from notifications where type = 'PARTNER_CREATED' and target_id = ?", id))
 
 		deleteEvent(couple.a.accessToken, id).andExpect(status().isNoContent)
 

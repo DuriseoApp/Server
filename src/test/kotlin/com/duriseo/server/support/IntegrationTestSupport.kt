@@ -76,6 +76,9 @@ abstract class IntegrationTestSupport {
 	protected lateinit var coupleEvents: CoupleEventRecorder
 
 	@Autowired
+	protected lateinit var eventChanges: EventChangeRecorder
+
+	@Autowired
 	private lateinit var context: WebApplicationContext
 
 	protected lateinit var mockMvc: MockMvc
@@ -89,6 +92,7 @@ abstract class IntegrationTestSupport {
 		fakeKakao.reset()
 		inviteCodeGenerator.reset()
 		coupleEvents.reset()
+		eventChanges.reset()
 		mockMvc = MockMvcBuilders.webAppContextSetup(context).build()
 	}
 
@@ -219,6 +223,18 @@ abstract class IntegrationTestSupport {
 
 	protected fun deleteEvent(accessToken: String, id: Any): ResultActions =
 		mockMvc.perform(delete("$API/events/$id").header("Authorization", "Bearer $accessToken"))
+
+	/** `PUT /events/{id}/reminder`. [json]이 null이면 본문 없이 보낸다 */
+	protected fun putReminderRaw(accessToken: String, id: Any, json: String?): ResultActions {
+		val request = put("$API/events/$id/reminder").header("Authorization", "Bearer $accessToken")
+		return mockMvc.perform(if (json == null) request else request.contentType(MediaType.APPLICATION_JSON).content(json))
+	}
+
+	protected fun putReminder(accessToken: String, id: Any, option: String): ResultActions =
+		putReminderRaw(accessToken, id, """{"option":"$option"}""")
+
+	protected fun deleteReminder(accessToken: String, id: Any): ResultActions =
+		mockMvc.perform(delete("$API/events/$id/reminder").header("Authorization", "Bearer $accessToken"))
 
 	/** `POST /events`가 201로 끝난 것을 확인하고 일정 ID를 돌려준다 */
 	protected fun createEvent(accessToken: String, json: String): UUID {

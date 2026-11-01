@@ -17,7 +17,7 @@ import kotlin.test.assertEquals
 
 /**
  * 일정 권한 규칙 (API.md 2장 R-01·R-02·R-07·R-10·R-13)을 경로로 확인한다 (FR-CAL-03 AC2·AC4·AC5, NFR-SEC-02).
- * 규칙마다 허용·거부 테스트를 둔다. 일정 알림 설정 경로(`PUT`·`DELETE /events/{id}/reminder`)의 R-01·R-07은 단위 3 2부가 더한다.
+ * 규칙마다 허용·거부 테스트를 둔다. 일정 알림 설정 경로(`PUT`·`DELETE /events/{id}/reminder`)의 R-01·R-07은 `EventReminderTest`가 확인한다.
  * 이 테스트의 알림 행은 `event_reminders`에 직접 넣은 픽스처다.
  */
 @SpringBootTest

@@ -5,6 +5,8 @@ import com.duriseo.server.support.Tokens
 import com.jayway.jsonpath.JsonPath
 import org.springframework.test.web.servlet.ResultActions
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
+import java.sql.Timestamp
+import java.time.Instant
 import java.util.UUID
 
 /**
@@ -56,6 +58,21 @@ abstract class EventTestSupport : IntegrationTestSupport() {
 		"select * from event_reminders order by id",
 		"select id, user_id, type, title, body, target_type, target_id from notifications order by id",
 	).joinToString("\n") { sql -> jdbc.queryForList(sql).toString() }
+
+	/** 한 사용자가 한 일정에 건 알림의 `fire_at`. 행이 없으면 실패한다 */
+	protected fun fireAtOf(eventId: UUID, userId: UUID): Instant =
+		instantOf("select fire_at from event_reminders where event_id = ? and user_id = ?", eventId, userId)
+
+	/** 한 사용자가 한 일정에 건 알림의 `sent_at`. 아직 안 보냈으면 null */
+	protected fun sentAtOf(eventId: UUID, userId: UUID): Instant? =
+		jdbc.queryForObject("select sent_at from event_reminders where event_id = ? and user_id = ?", Timestamp::class.java, eventId, userId)
+			?.toInstant()
+
+	protected fun optionOf(eventId: UUID, userId: UUID): String =
+		jdbc.queryForObject("select option from event_reminders where event_id = ? and user_id = ?", String::class.java, eventId, userId)!!
+
+	protected fun reminderCount(eventId: UUID, userId: UUID): Int =
+		count("select count(*) from event_reminders where event_id = ? and user_id = ?", eventId, userId)
 
 	protected fun titleOf(eventId: UUID): String = jdbc.queryForObject("select title from events where id = ?", String::class.java, eventId)!!
 }

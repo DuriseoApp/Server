@@ -8,7 +8,7 @@ import java.time.Instant
 import java.util.UUID
 
 /**
- * API.md 3.3 `Event`. `GET /events`(`items`), `POST /events`, `GET`·`PATCH /events/{id}`의 응답 본문.
+ * API.md 3.3 `Event`. `GET /events`(`items`), `POST /events`, `GET`·`PATCH /events/{id}`, `PUT /events/{id}/reminder`의 응답 본문.
  * `start`·`end`는 종일이면 `YYYY-MM-DD`, 아니면 ISO 8601 UTC 일시다 (문자열로 내보낸다).
  */
 data class EventResponse(

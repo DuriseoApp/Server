@@ -4,6 +4,9 @@ import com.duriseo.server.couple.application.CoupleLinked
 import com.duriseo.server.couple.application.CoupleUnlinked
 import com.duriseo.server.couple.application.InviteCodeGenerator
 import com.duriseo.server.couple.application.RandomInviteCodeGenerator
+import com.duriseo.server.event.application.EventCreated
+import com.duriseo.server.event.application.EventDeleted
+import com.duriseo.server.event.application.EventUpdated
 import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Primary
@@ -75,6 +78,45 @@ class CoupleEventRecorder {
 	}
 }
 
+/**
+ * 커밋 뒤에 전달된 `EventCreated`·`EventUpdated`·`EventDeleted`를 모은다. [onCreated]는 전달되는 순간 실행한다: 그때 다른 연결에서
+ * 커밋된 값이 보이는지로 "커밋 뒤에만 전달된다"를 확인한다. 롤백된 트랜잭션의 이벤트는 오지 않는다.
+ */
+class EventChangeRecorder {
+
+	val created = CopyOnWriteArrayList<EventCreated>()
+
+	val updated = CopyOnWriteArrayList<EventUpdated>()
+
+	val deleted = CopyOnWriteArrayList<EventDeleted>()
+
+	@Volatile
+	var onCreated: ((EventCreated) -> Unit)? = null
+
+	fun reset() {
+		created.clear()
+		updated.clear()
+		deleted.clear()
+		onCreated = null
+	}
+
+	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+	fun record(event: EventCreated) {
+		onCreated?.invoke(event)
+		created.add(event)
+	}
+
+	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+	fun record(event: EventUpdated) {
+		updated.add(event)
+	}
+
+	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+	fun record(event: EventDeleted) {
+		deleted.add(event)
+	}
+}
+
 /** 커플 통합 테스트가 쓰는 가짜들. `TestClockConfig`가 함께 가져와 컨텍스트가 하나로 공유된다 */
 @TestConfiguration(proxyBeanMethods = false)
 class TestCoupleConfig {
@@ -85,4 +127,7 @@ class TestCoupleConfig {
 
 	@Bean
 	fun coupleEventRecorder() = CoupleEventRecorder()
+
+	@Bean
+	fun eventChangeRecorder() = EventChangeRecorder()
 }
