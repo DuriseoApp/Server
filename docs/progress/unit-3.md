@@ -1,6 +1,6 @@
 # 단위 3: 캘린더 — 일정, 일정 알림, 날짜 범위 (event)
 
-> 브랜치: `feat/3-calendar` · PR: https://github.com/DuriseoApp/Server/pull/8 · 상태: **구현 1부·2부 완료, 리뷰 1회차 반영 중** (CI 564개 통과, 커밋 b122246. 1회차 수정은 CI 확인 대기: 이 환경은 Gradle 플러그인·Docker에 닿지 않는다)
+> 브랜치: `feat/3-calendar` · PR: https://github.com/DuriseoApp/Server/pull/8 · 상태: **구현 1부·2부 완료, 리뷰 2회차 머지 가능** (CI 571개 통과, 두 번. 2회차 Minor 정리는 CI 확인 대기: 이 환경은 Gradle 플러그인·Docker에 닿지 않는다)
 > 기준: PRD v0.9 (D-89~D-103 포함. 처음 범위를 잡을 때는 v0.8이었다. 처음 범위 목록: FR-CAL-01 AC2·AC6, FR-CAL-02, FR-CAL-03, FR-CAL-05, FR-NOTI-04 일부, NFR-SEC-02, NFR-TIME-01, NFR-LIMIT-01, NFR-SYNC-01·03, D-10, D-12, D-13, D-16, D-34, D-35, D-52, D-59, D-64, D-74, D-77), API.md 1장·1.1·2장(R-01·R-02·R-07·R-10·R-13·R-15)·3.3(일정 6개 경로)·3.5·5장·6장·7장, ERD 3.3(events·event_reminders)·4.1·4.2·4.3·4.5·5장(DB-05·06·07·13)
 > Docs 기준 커밋: DuriseoApp/Docs main `728ea08` (PRD v0.9, Docs PR #10 머지). 처음 범위를 잡을 때는 `afc3d1b`(PRD v0.8)였다. 읽은 경로는 `/home/claude/docs-main` (`../Docs` 대신)
 > 앞 단위: 단위 2 머지됨 (main `7016114`)
@@ -242,11 +242,12 @@ AC 하나에 테스트 하나 이상 (CONVENTIONS). "앱 동작"은 서버 API�
 | `PATCH /events/{id}` | 그 일정 행 `FOR UPDATE` → (잠근 뒤 R-02·R-13 다시 확인) → 그 일정의 `event_reminders` 재계산 | 함께 일정의 동시 수정(마지막 저장이 이김, NFR-SYNC-03), 수정과 `PUT reminder`가 겹쳐 새 일시와 옛 일시 기준 알림이 섞이는 것 |
 | `PUT /events/{id}/reminder` | 그 일정 행 `FOR UPDATE`(`EventLocker`) → 요청자의 행을 읽어 바꾸거나 넣는다(`ON CONFLICT`는 쓰지 않았다. 같은 일정을 잠가 한 줄로 서므로 유일 제약 위반이 나지 않는다) | 같은 사용자의 겹친 설정(`uq_event_reminders_event_user` 위반이 500이 되지 않게), 수정과 겹침 |
 | `DELETE /events/{id}` | 일정 행 `FOR UPDATE` | 삭제와 수정·알림 설정이 겹침 (CASCADE가 알림을 지움) |
-| `POST /events` + `PARTNER_CREATED` 행 | 공간 행을 잠그지 않는다. 행을 넣기 전에 요청자·상대 사용자 행을 `FOR SHARE`로 먼저 잡는다(구현 2부 "정한 것", 리뷰 1회차 뒤 `FOR KEY SHARE`에서 바꿈) | **공간 행을 잠근 채 알림 행을 넣으면 안 된다.** 알림 INSERT의 외래 키 검사가 상대 users 행에 `FOR KEY SHARE`를 요구하고, 상대의 탈퇴가 그 행을 `FOR UPDATE`로 잡은 채 공간 행을 기다리면 교착한다 (단위 2 2부 결정, ARCHITECTURE 4장) |
+| `POST /events` + `PARTNER_CREATED` 행 | 공간 행을 잠그지 않는다. 행을 넣기 전에 요청자·상대 사용자 행을 `FOR SHARE`로 먼저 잡는다(구현 2부 "정한 것", 리뷰 1회차 뒤 `FOR KEY SHARE`에서 바꿈) | **공간 행을 잠근 채 사용자 행을 기다리면 안 된다**(잠금 순서 users → invite_codes → spaces, 단위 2 2부 결정, ARCHITECTURE 4장). 사전 `FOR SHARE`가 하는 일은 "해제·탈퇴(`FOR NO KEY UPDATE`)와 한 줄로 세우기"다 |
 
 그 밖의 위험:
 
-1. **연결 해제와 겹친 쓰기의 행이 해제 정리 뒤에 남는 경쟁** (리뷰 1회차 Major). 해제는 사용자 행을 `FOR UPDATE`로 잡은 채 공간을 `UNLINKED`로 바꾸고 그 공간의 알림 행을 지운다. 일정 쪽이 R-01·공간 읽기 뒤에 사용자 행을 기다리면 해제 커밋 뒤에 해제된 공간으로 행이 들어간다. 대책: `POST /events`는 요청자·상대를 `FOR SHARE`로 잡은 뒤 활성 공간·상대를 다시 읽고, 바뀌었으면 `PartnerLockRetry` 안에서 롤백하고 처음부터 다시 한다(재시도를 다 쓰면 다시 읽은 값으로 새 공간에 쓴다). `PUT`·`DELETE reminder`는 R-01 전에 요청자 행을 `FOR SHARE`로 잡아, 해제 커밋 뒤에는 R-01에서 404가 난다. 단위 6 스케줄러에 맡기지 않는다. 처음에는 `FOR KEY SHARE`였는데, 해제의 `PESSIMISTIC_WRITE`가 PostgreSQL에서 `FOR NO KEY UPDATE`라 충돌하지 않아 CI 동시 테스트(`R-01 알림을 설정하는 요청과 연결 해제가 동시에 와도 …`)가 남은 알림 행을 잡았다. `FOR SHARE`로 바꿨다.
+1. **연결 해제와 겹친 쓰기의 행이 해제 정리 뒤에 남는 경쟁** (리뷰 1회차 Major). 해제는 사용자 행을 `PESSIMISTIC_WRITE`(PostgreSQL `FOR NO KEY UPDATE`)로 잡은 채 공간을 `UNLINKED`로 바꾸고 그 공간의 알림 행을 지운다. 일정 쪽이 R-01·공간 읽기 뒤에 사용자 행을 기다리면 해제 커밋 뒤에 해제된 공간으로 행이 들어간다. 대책: `POST /events`는 요청자·상대를 `FOR SHARE`로 잡은 뒤 활성 공간·상대를 다시 읽고, 바뀌었으면 `PartnerLockRetry` 안에서 롤백하고 처음부터 다시 한다(재시도를 다 쓰면 다시 읽은 값으로 새 공간에 쓴다). `PUT`·`DELETE reminder`는 R-01 전에 요청자 행을 `FOR SHARE`로 잡아, 해제 커밋 뒤에는 R-01에서 404가 난다. 단위 6 스케줄러에 맡기지 않는다. 처음에는 `FOR KEY SHARE`였는데, 해제의 `PESSIMISTIC_WRITE`가 PostgreSQL에서 `FOR NO KEY UPDATE`라 충돌하지 않아 CI 동시 테스트(`R-01 알림을 설정하는 요청과 연결 해제가 동시에 와도 …`)가 남은 알림 행을 잡았다. `FOR SHARE`로 바꿨다.
+   - 위험: 재시도 3번을 다 쓴 뒤 새 상대를 순서 밖에서 `lockShare`하면, 해제·탈퇴와 겹칠 때 PostgreSQL 교착 판정으로 500이 날 수 있다(`lockForUpdateWithPartner`의 재시도 소진과 같은 선례, 드묾).
 2. **시간대·날짜 변환 경계.** 시간 일정의 날짜 범위(R-15)와 조회 경계, 종일 알림 시각은 모두 `users.time_zone`으로 계산한다. 서머타임이 있는 시간대에서 "1일 전"(`DAY_1`)은 24시간 전이다 (D-90). `Clock` 빈으로 고정한 시각으로 테스트한다 (ARCHITECTURE 6장).
 3. **범위 조회 쿼리.** 종일(`start_date`/`end_date`)과 시간(`start_at`/`end_at`) 일정이 서로 다른 컬럼·인덱스라 두 조건을 합쳐야 한다. 요청자 시간대의 `from` 0시 ~ `to` 다음 날 0시를 UTC 일시로 바꿔 시간 일정에 쓰고, 종일 일정에는 날짜 그대로 쓴다. 3개월 범위라 페이지는 없지만 한 달 일정이 많아도 메모리가 작은 서버(ARCHITECTURE 7장)에서 문제없도록 필요한 컬럼만 읽는다.
 4. **JPA 쓰기 순서.** 재계산은 같은 트랜잭션에서 알림 엔티티를 고쳐 쓰고(`reschedule`), 종일↔시간 전환의 삭제만 일괄 DELETE(`flushAutomatically`)다. 일정 행 수정과 알림 재계산 순서에는 UNIQUE 충돌이 없다.
@@ -320,12 +321,12 @@ API 7장: "모든 알림 작업은 받는 사람마다 `notifications` 행을 �
 - `EventController`: `PUT`·`DELETE /events/{id}/reminder`
 - `NotificationService.createPartnerCreated`, `NotificationTexts.partnerCreatedTitle`·`partnerCreatedBody`·`monthDayWeekday`
 - 단위 2 연결점 이전: `CoupleContentGateway`의 events·`event_reminders` SQL(`hasContent`·`countsOf`·`moveAll`·`deleteEventReminders`)과 `WithdrawalDataEraser`의 `event_reminders` 삭제를 `EventContentService`로 옮겼다. 기념일·메모 SQL은 단위 4·5 때까지 게이트웨이에 남는다
-- `UserService.lockKeyShare`, `UserRepository.lockKeyShare` (아래 "2부에서 정한 것")
+- `UserService.lockShare`, `UserRepository.lockShare` (아래 "2부에서 정한 것")
 
 ### 2부에서 정한 것 (문서에 없는 구현 선택)
 
 - **`PARTNER_CREATED` 행은 상대의 `partner_created` 설정과 관계없이 만든다.** API.md 7장 머리말("모든 알림 작업은 받는 사람마다 `notifications` 행을 먼저 만들고, 푸시는 ... 그 종류의 푸시 설정이 켜져 있을 때만")과 ERD DB-07이 그렇다. 설정을 꺼 둔 사람은 푸시만 안 받고 알림 목록에는 남는다. 리드 지시("설정이 꺼져 있으면 안 만듦")와 달라 문서를 따랐고 보고에 적었다
-- **일정 만들기는 행을 넣기 전에 요청자와 커플 상대의 `users` 행을 UUID 오름차순으로 `FOR SHARE`로 먼저 잡는다**(처음엔 `FOR KEY SHARE`, 위험 1 참고). 공간 행은 여전히 잠그지 않는다. 일정 INSERT의 외래 키 검사가 공간 행에 `FOR KEY SHARE`를 잡은 채 사용자 행을 기다리면, 사용자 행 → 공간 행 순서로 잠그는 탈퇴·연결 해제(`lockForUpdateWithPartner`)와 교착한다. 먼저 사용자 행을 잡으면 이 순서를 지킨다. `docs/ARCHITECTURE.md` 4장에 한 줄 더했다. 테스트: `FR-AUTH-06 AC1 일정을 만드는 요청과 상대의 탈퇴가 동시에 와도 교착 없이 끝난다`
+- **일정 만들기는 행을 넣기 전에 요청자와 커플 상대의 `users` 행을 UUID 오름차순으로 `FOR SHARE`로 먼저 잡는다**(처음엔 `FOR KEY SHARE`, 위험 1 참고). 공간 행은 여전히 잠그지 않는다. 이 사전 잠금은 해제·탈퇴(`lockForUpdateWithPartner`, `FOR NO KEY UPDATE`)와 한 줄로 서게 하고, 사용자 행을 공간 행보다 먼저 잡는 순서를 지킨다. `docs/ARCHITECTURE.md` 4장에 한 줄 더했다. 테스트: `FR-AUTH-06 AC1 일정을 만드는 요청과 상대의 탈퇴가 동시에 와도 교착 없이 끝난다`
 - `PUT reminder`·`DELETE reminder`는 일정 행을 `FOR UPDATE`로 잠근다(`EventLocker`). 같은 사용자의 `PUT` 두 개가 겹쳐도 유일 제약 위반 없이 한 줄로 서고, `PATCH`의 다시 계산과도 겹치지 않는다
 - `PATCH`가 `isAllDay`를 바꾸면 `deleteAllOfEvent`, 같은 종류에서 `start`가 실제로 바뀌면 `recalculateAllOfEvent`다. `start`를 같은 값으로 다시 보내는 것은 바뀐 것이 아니다. `end`·제목·메모·`isTogether`만 바뀌면 알림은 건드리지 않는다
 - 다시 계산과 `PUT`은 `fire_at` <= 지금이면 `sent_at` = 지금(같은 시각도 지난 것), 미래면 null이다 (D-90). 지난 `fire_at`도 응답에 그대로 나간다
@@ -358,24 +359,33 @@ API 7장: "모든 알림 작업은 받는 사람마다 `notifications` 행을 �
 | 회차 | Critical | Major | 비고 |
 | --- | --- | --- | --- |
 | 1 | 0 | 1 | Minor 6. 처리는 아래 |
+| 2 | 0 | 0 | 머지 가능. Minor 5. 처리는 아래 |
 
 **1회차 처리**
 
-- Major 연결 해제와 겹친 쓰기: 위 "동시성" 위험 1. 코드 `EventService.create`(`TransactionTemplate` + `PartnerLockRetry`, `lockKeyShare` 뒤 공간·상대 재확인), `EventReminderService.lockRequester`. 테스트: `D-45 일정을 만드는 요청과 연결 해제가 동시에 와도 …`, `R-01 알림을 설정하는 요청과 연결 해제가 동시에 와도 …`
+- Major 연결 해제와 겹친 쓰기: 위 "동시성" 위험 1. 코드 `EventService.create`(`TransactionTemplate` + `PartnerLockRetry`, `lockShare` 뒤 공간·상대 재확인(처음엔 `FOR KEY SHARE`였으나 해제의 `FOR NO KEY UPDATE`와 충돌하지 않아 `FOR SHARE`로 바꿨다)), `EventReminderService.lockRequester`. 테스트: `D-45 일정을 만드는 요청과 연결 해제가 동시에 와도 …`, `R-01 알림을 설정하는 요청과 연결 해제가 동시에 와도 …`
 - Minor 일시 형식: `YYYY-MM-DDTHH:MM:SSZ`만 받는다(리드 결정). `Z`가 아닌 오프셋과 소수 초는 (`start`/`end`, `INVALID`). 테스트: `FR-CAL-02 AC2 Z가 아닌 오프셋과 소수 초가 있는 일시는 …`
 - Minor UUID 잠금 순서: Kotlin `sorted()`(부호 있는 비교)를 PostgreSQL `order by`와 같은 부호 없는 비교(`common/persistence/UuidOrder.kt`의 `sortedAsPostgres`)로 바꿨다. `UserService.lockForUpdateWithPartner`, `CoupleLinker.lockUsersInOrder`에 적용
 - Minor 빈 본문 `PATCH`: 저장값과 같은 값만 보내면 `updated_by`·`updated_at`을 바꾸지 않고 `EventUpdated`도 없다(200 `Event`는 그대로). 테스트: `FR-CAL-03 AC1 아무 필드도 바뀌지 않는 PATCH는 …`, `… 하나라도 바뀌면 …`
 - Minor 계획된 테스트 2개: `FR-COUPLE-03 AC1 일정만 있는 개인 공간도 기록이 있는 공간으로 본다`(`CoupleJoinTest`), `FR-COUPLE-03 AC1 import true면 일정이 author_id·is_together·일정 알림을 유지한 채 커플 공간으로 옮겨진다`(`CoupleImportTest`)
 - Minor 진행 기록의 오래된 문장("새 마이그레이션 없음", "사용자 행을 잠그지 않는다")을 고쳤다
 
+**2회차 처리**
+
+- 사전 잠금을 `FOR KEY SHARE`에서 `FOR SHARE`(`UserService.lockShare`, 커밋 411f85c)로 바꾼 것을 주석·문서에 맞췄다: `EventService` 머리말, `UserService.lockForUpdateWithPartner`·`lockShare`, `UserRepository.lockShare`, `EventReminderService`, ARCHITECTURE 4장, 이 문서 5장 표·위험 1·2부 "정한 것". PostgreSQL 외래 키 검사는 `FOR KEY SHARE`이고 해제·탈퇴의 `PESSIMISTIC_WRITE`는 `FOR NO KEY UPDATE`다
+- 위험 목록에 재시도 소진 뒤 순서 밖 `lockShare`의 교착 판정 500 가능성을 한 줄 더했다
+- `PATCH /me`(`UserService.updateProfile`)는 첫 줄에서 사용자 행을 `FOR UPDATE`로 잠가 같은 사용자의 `PUT reminder`와 한 줄로 선다. 테스트: `FR-CAL-05 AC6 시간대 변경과 알림 설정이 동시에 와도 새 알림은 새 시간대로 계산돼 있다`
+- 상태·남은 일 첫 줄을 CI 571 통과(두 번)로 고쳤다
+
 ## Docs 후속 (Docs 레포 `/prd-sync`가 할 일)
 
+- Android: 일시는 `YYYY-MM-DDTHH:MM:SSZ`만 받는다. 밀리초나 `Z`가 아닌 오프셋이 붙으면 400 `VALIDATION_FAILED`다
 - API.md 1장에 일시 형식은 `YYYY-MM-DDTHH:MM:SSZ`만이고 `Z`가 아닌 오프셋과 소수 초는 받지 않는다고 명시 (서버는 `start`/`end` `INVALID`로 거부한다)
 
 
 ## 남은 일
 
-- CI에서 `./gradlew build` 초록불 확인 (이 환경은 Gradle 플러그인·Docker에 닿지 않아 1부·2부 코드를 컴파일도 못 돌렸다. 1부는 CI 500개 통과)
+- CI 571개 통과(두 번). 2회차 Minor 정리분(주석·문서·`PATCH /me` 잠금과 테스트 1개)은 CI에서 `./gradlew build` 초록불 확인 (이 환경은 Gradle 플러그인·Docker에 닿지 않는다)
 - 단위 4·5: `CoupleContentGateway`에 남은 `anniversaries`·`memos` 네이티브 SQL(`hasContent`·`countsOf`·`moveAll`)을 각 도메인 서비스로 옮기고 이 클래스를 없앤다. `WithdrawalDataEraser`의 `memo_favorites` 삭제는 단위 5
 - 단위 6: 1분 일정 알림 스케줄러(`EVENT_REMINDER` 행, `sent_at IS NULL`이고 `fire_at <= now`, 푸시), 일정 도메인 이벤트(`EventCreated`·`EventUpdated`·`EventDeleted`)를 듣는 SYNC `EVENT`, `PARTNER_CREATED` 푸시(상대의 `partner_created` 설정과 유효 세션을 본다)와 `NOTIFICATION` 신호
 - Android: 일정 응답 모양·오류 코드·알림 option 값은 API.md 3.3 (v0.9)를 따른다

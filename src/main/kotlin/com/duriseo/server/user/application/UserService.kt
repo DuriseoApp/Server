@@ -44,10 +44,13 @@ class UserService(
 	/**
 	 * `PATCH /me`: 넘어온 값만 바꾼다. 값 검증은 api 계층이 했다 (닉네임은 정리된 값, 시간대는 IANA 이름).
 	 * 시간대가 실제로 바뀌면 `UserTimeZoneChanged`를 발행한다.
+	 * 첫 줄에서 사용자 행을 `FOR UPDATE`로 잠가 같은 사용자의 `PUT /events/{id}/reminder`(`lockShare`)와 한 줄로 세운다:
+	 * 시간대 재계산(리스너)이 미리 읽은 알림 값으로 덮어쓰거나, 방금 만든 알림을 놓치지 않게 한다.
 	 */
 	@Transactional
 	fun updateProfile(userId: UUID, nickname: String?, timeZone: String?) {
-		val user = users.findByIdOrNull(userId)?.takeIf { it.deletedAt == null }
+		val locked = users.findByIdForUpdate(userId)
+		val user = locked?.takeIf { it.deletedAt == null }
 			?: throw ApiException(ErrorCode.SESSION_INVALID, "user not found")
 		val previousTimeZone = user.timeZone
 		if (nickname != null) user.nickname = nickname
@@ -79,10 +82,10 @@ class UserService(
 		checkNotNull(users.findByIdForUpdate(userId)) { "user to lock is missing" }
 
 	/**
-	 * 사용자 행과 커플 상대의 행을 **UUID 오름차순**으로 잠그고(SELECT … FOR UPDATE) 사용자를 돌려준다. 연결 해제와 탈퇴가 쓴다.
-	 * 두 사람이 한 커플 공간을 해제·탈퇴하는 흐름은 모두 사용자 둘을 같은 순서로 잠근 뒤에 공간 행을 잠가야 한다:
-	 * 한쪽이 공간 행을 먼저 잡고 상대 알림·개인 공간 소속을 넣으면(외래 키 검사가 상대 행에 `FOR SHARE`를 요구) 상대 행을
-	 * 잡은 쪽과 교착한다 (잠금 순서 users → invite_codes → spaces).
+	 * 사용자 행과 커플 상대의 행을 **UUID 오름차순**으로 잠그고(`PESSIMISTIC_WRITE`, PostgreSQL에서는 `FOR NO KEY UPDATE`) 사용자를 돌려준다.
+	 * 연결 해제와 탈퇴가 쓴다. 두 사람이 한 커플 공간을 해제·탈퇴하는 흐름은 모두 사용자 둘을 같은 순서로 잠근 뒤에 공간 행을 잠가야 한다:
+	 * 사용자 행끼리 서로 반대 순서로 기다리지 않게 하고, 사용자 행을 `FOR SHARE`로 먼저 잡는 일정 쓰기(`lockShare`)와도 같은 순서를 지킨다
+	 * (잠금 순서 users → invite_codes → spaces). 외래 키 검사는 참조되는 행에 `FOR KEY SHARE`를 잡는다.
 	 * 상대는 잠금 없이 먼저 읽는다. 잠근 뒤 상대가 바뀌었으면(그 사이 연결·해제됨) [PartnerLockRetry] 안에서는
 	 * [PartnerChangedException]을 던져 트랜잭션을 롤백하고 처음부터 다시 잠그게 한다. 다시 시도할 수 없으면(재시도를 다 썼거나
 	 * 도우미 밖) 새 상대를 이어서 잠근다. 이 경우 순서가 어긋날 수 있다.
@@ -100,8 +103,9 @@ class UserService(
 	}
 
 	/**
-	 * [userIds]의 사용자 행을 ID 오름차순으로 `FOR SHARE`로 잠근다 (탈퇴·연결 해제의 `FOR UPDATE`가 끝나기를 기다리고 서로는 막지 않는다).
-	 * 일정처럼 공간 행을 참조하는 행을 넣기 전에 부른다. 잠금 순서 users → … → spaces 안에서 사용자 행을 먼저 잡으려는 것이다.
+	 * [userIds]의 사용자 행을 ID 오름차순으로 `FOR SHARE`로 잠근다. 해제·탈퇴의 `PESSIMISTIC_WRITE`(PostgreSQL에서는 `FOR NO KEY UPDATE`)와
+	 * 충돌하므로 그 트랜잭션이 끝나기를 기다리고, `FOR SHARE`끼리는 서로 막지 않는다. 하는 일은 일정 쓰기를 해제와 한 줄로 세우는 것이다
+	 * (`FOR KEY SHARE`는 `FOR NO KEY UPDATE`와 충돌하지 않아 기다리지 않는다). 사용자 행을 먼저 잡는 순서(users → … → spaces)는 그대로 지킨다.
 	 */
 	@Transactional(propagation = Propagation.MANDATORY)
 	fun lockShare(userIds: Collection<UUID>) {

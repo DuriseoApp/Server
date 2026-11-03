@@ -641,6 +641,26 @@ class EventReminderTest : EventTestSupport() {
 	}
 
 	@Test
+	fun `FR-CAL-05 AC6 시간대 변경과 알림 설정이 동시에 와도 알림은 새 시간대로 계산돼 있다`() {
+		repeat(5) {
+			val couple = newCouple()
+			setTimeZone(couple.a, "UTC")
+			val id = allDayTogether(couple.a.accessToken, start = "2026-11-03")
+
+			val results = inParallel(
+				listOf(
+					{ statusOf(putReminder(couple.a.accessToken, id, "ALLDAY_9AM")) },
+					{ statusOf(patchMe(couple.a.accessToken, """{"timeZone":"America/Los_Angeles"}""")) },
+				),
+			)
+
+			assertEquals(listOf(200, 200), results)
+			// 로스앤젤레스 11월 3일 09:00 = 17:00Z. 어느 쪽이 먼저여도 UTC 기준 09:00Z로 남지 않는다
+			assertEquals(Instant.parse("2026-11-03T17:00:00Z"), fireAtOf(id, couple.a.userId))
+		}
+	}
+
+	@Test
 	fun `FR-CAL-05 AC6 이미 보낸 종일 알림은 시간대가 바뀌어도 다시 계산하지 않는다`() {
 		val couple = newCouple()
 		setTimeZone(couple.a, "UTC")

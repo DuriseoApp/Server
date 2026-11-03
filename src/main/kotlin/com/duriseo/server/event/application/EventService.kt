@@ -32,11 +32,10 @@ import java.util.UUID
  * 일정 조회·작성·수정·삭제 (API.md 3.3, FR-CAL-01·02·03, R-01·02·07·10·13·15).
  * 권한은 모두 [SpaceAccessPolicy]가 검사하고(다른 공간의 일정은 403이 아니라 404, DB-05) 이 서비스는 따로 검사하지 않는다.
  *
- * **잠금:** 일정 쓰기는 공간 행을 잠그지 않는다. 공간 행을 잠근 채 알림 행(`PARTNER_CREATED`)을 넣으면 알림의 외래 키 검사가
- * 상대 `users` 행에 `FOR SHARE`를 요구하고, 그 행을 `FOR UPDATE`로 잡은 상대의 탈퇴가 공간 행을 기다리다 교착하기 때문이다
- * (ARCHITECTURE 4장). 수정·삭제는 그 일정 행만 `FOR UPDATE`로 잠그고 R-01·R-02·R-13·R-10을 잠근 값으로 다시 확인한다.
- * 만들기는 일정·알림 행을 넣기 전에 요청자와 상대의 `users` 행을 ID 오름차순으로 `FOR SHARE`로 먼저 잡는다: 일정의 외래 키 검사가
- * 공간 행에 `FOR SHARE`를 잡은 채 사용자 행을 기다리면, 사용자 행 → 공간 행 순서로 잠그는 탈퇴·연결 해제와 교착하기 때문이다.
+ * **잠금:** 일정 쓰기는 공간 행을 잠그지 않는다. 잠금 순서(users → invite_codes → spaces, ARCHITECTURE 4장)를 지키려고 공간 행을 잡은 채
+ * 사용자 행을 기다리는 흐름을 두지 않는다. 수정·삭제는 그 일정 행만 `FOR UPDATE`로 잠그고 R-01·R-02·R-13·R-10을 잠근 값으로 다시 확인한다.
+ * 만들기는 일정·알림 행을 넣기 전에 요청자와 상대의 `users` 행을 ID 오름차순으로 `FOR SHARE`로 먼저 잡는다. 해제·탈퇴의 `PESSIMISTIC_WRITE`
+ * (PostgreSQL `FOR NO KEY UPDATE`)와 충돌하므로 해제와 한 줄로 서고, 해제가 커밋된 뒤에는 공간·상대를 다시 읽어 알아챈다.
  * 함께 일정의 동시 수정은 마지막 저장이 이긴다 (NFR-SYNC-03, 낙관적 락 없음).
  *
  * 일정 알림(`PUT`·`DELETE /events/{id}/reminder`)과 다시 계산의 계산식은 [EventReminderService]가 한다.
