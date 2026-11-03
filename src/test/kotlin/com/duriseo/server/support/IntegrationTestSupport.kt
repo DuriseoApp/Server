@@ -76,6 +76,9 @@ abstract class IntegrationTestSupport {
 	protected lateinit var coupleEvents: CoupleEventRecorder
 
 	@Autowired
+	protected lateinit var eventChanges: EventChangeRecorder
+
+	@Autowired
 	private lateinit var context: WebApplicationContext
 
 	protected lateinit var mockMvc: MockMvc
@@ -89,6 +92,7 @@ abstract class IntegrationTestSupport {
 		fakeKakao.reset()
 		inviteCodeGenerator.reset()
 		coupleEvents.reset()
+		eventChanges.reset()
 		mockMvc = MockMvcBuilders.webAppContextSetup(context).build()
 	}
 
@@ -193,6 +197,51 @@ abstract class IntegrationTestSupport {
 	protected fun unlinkCouple(accessToken: String): ResultActions =
 		mockMvc.perform(delete("$API/couple").header("Authorization", "Bearer $accessToken"))
 
+	// ── 일정 요청 ───────────────────────────────────────
+
+	/** `GET /events`. [from]·[to]가 null이면 그 쿼리 파라미터를 보내지 않는다 */
+	protected fun getEvents(accessToken: String, from: String?, to: String?): ResultActions {
+		val request = get("$API/events").header("Authorization", "Bearer $accessToken")
+		if (from != null) request.param("from", from)
+		if (to != null) request.param("to", to)
+		return mockMvc.perform(request)
+	}
+
+	/** `POST /events` 본문을 그대로 보낸다. [json]이 null이면 본문 없이 보낸다 */
+	protected fun postEventRaw(accessToken: String, json: String?): ResultActions {
+		val request = post("$API/events").header("Authorization", "Bearer $accessToken")
+		return mockMvc.perform(if (json == null) request else request.contentType(MediaType.APPLICATION_JSON).content(json))
+	}
+
+	protected fun getEvent(accessToken: String, id: Any): ResultActions =
+		mockMvc.perform(get("$API/events/$id").header("Authorization", "Bearer $accessToken"))
+
+	protected fun patchEvent(accessToken: String, id: Any, json: String): ResultActions =
+		mockMvc.perform(
+			patch("$API/events/$id").header("Authorization", "Bearer $accessToken").contentType(MediaType.APPLICATION_JSON).content(json),
+		)
+
+	protected fun deleteEvent(accessToken: String, id: Any): ResultActions =
+		mockMvc.perform(delete("$API/events/$id").header("Authorization", "Bearer $accessToken"))
+
+	/** `PUT /events/{id}/reminder`. [json]이 null이면 본문 없이 보낸다 */
+	protected fun putReminderRaw(accessToken: String, id: Any, json: String?): ResultActions {
+		val request = put("$API/events/$id/reminder").header("Authorization", "Bearer $accessToken")
+		return mockMvc.perform(if (json == null) request else request.contentType(MediaType.APPLICATION_JSON).content(json))
+	}
+
+	protected fun putReminder(accessToken: String, id: Any, option: String): ResultActions =
+		putReminderRaw(accessToken, id, """{"option":"$option"}""")
+
+	protected fun deleteReminder(accessToken: String, id: Any): ResultActions =
+		mockMvc.perform(delete("$API/events/$id/reminder").header("Authorization", "Bearer $accessToken"))
+
+	/** `POST /events`가 201로 끝난 것을 확인하고 일정 ID를 돌려준다 */
+	protected fun createEvent(accessToken: String, json: String): UUID {
+		val body = bodyOf(postEventRaw(accessToken, json).andExpect(status().isCreated))
+		return UUID.fromString(JsonPath.read<String>(body, "$.id"))
+	}
+
 	protected fun bodyOf(result: ResultActions): String = result.andReturn().response.getContentAsString(Charsets.UTF_8)
 
 	protected fun statusOf(result: ResultActions): Int = result.andReturn().response.status
@@ -251,7 +300,7 @@ abstract class IntegrationTestSupport {
 
 	/** 공간·커플 테이블의 내용을 한 문자열로 모은다. 거부된 요청이 "아무것도 바꾸지 않았다"를 확인한다 (시도 기록은 뺀다) */
 	protected fun coupleSnapshot(): String = listOf(
-		"select id, type, status, start_date, together_color, unlinked_at, purge_at, updated_at from spaces order by id",
+		"select id, type, status, start_date, together_color, linked_at, unlinked_at, purge_at, updated_at from spaces order by id",
 		"select id, space_id, user_id, color, left_at from space_members order by id",
 		"select id, code, creator_user_id, expires_at, used_at, used_by_user_id, revoked_at from invite_codes order by id",
 		"select id, user_id, space_id, type, title, body from notifications order by id",
@@ -337,9 +386,12 @@ abstract class IntegrationTestSupport {
 		val now = ts(clock.instant())
 		if (unlinked) {
 			jdbc.update(
-				"insert into spaces (id, type, status, unlinked_at, purge_at, created_at, updated_at) values (?, 'COUPLE', 'UNLINKED', ?, ?, ?, ?)",
-				id, now, ts(clock.instant().plusSeconds(30L * 24 * 3600)), now, now,
+				"insert into spaces (id, type, status, linked_at, unlinked_at, purge_at, created_at, updated_at) values (?, 'COUPLE', 'UNLINKED', ?, ?, ?, ?, ?)",
+				id, now, now, ts(clock.instant().plusSeconds(30L * 24 * 3600)), now, now,
 			)
+		} else if (type == "COUPLE") {
+			// 커플 공간은 늘 연결 시각이 있다 (ERD 3.2 CHECK, V2)
+			jdbc.update("insert into spaces (id, type, linked_at, created_at, updated_at) values (?, 'COUPLE', ?, ?, ?)", id, now, now, now)
 		} else {
 			jdbc.update("insert into spaces (id, type, created_at, updated_at) values (?, ?, ?, ?)", id, type, now, now)
 		}
@@ -367,6 +419,39 @@ abstract class IntegrationTestSupport {
 			id, spaceId, authorId, title, ts(clock.instant()), ts(clock.instant()),
 		)
 		return id
+	}
+
+	/**
+	 * 일정 한 행을 마음대로 넣는다. 종일이면 [startDate]·[endDate], 아니면 [startAt]·[endAt]을 쓴다 (`ck_events_time_columns`).
+	 * 날짜 범위(R-15)는 DB가 검사하지 않으므로 범위 밖 값도 넣을 수 있다.
+	 */
+	protected fun insertEventRow(
+		spaceId: UUID,
+		authorId: UUID,
+		title: String = "테스트 일정",
+		isTogether: Boolean = false,
+		isAllDay: Boolean = true,
+		startDate: String? = null,
+		endDate: String? = null,
+		startAt: Instant? = null,
+		endAt: Instant? = null,
+	): UUID {
+		val id = UUID.randomUUID()
+		jdbc.update(
+			"insert into events (id, space_id, author_id, is_together, title, is_all_day, start_at, end_at, start_date, end_date, created_at, updated_at) " +
+				"values (?, ?, ?, ?, ?, ?, ?, ?, cast(? as date), cast(? as date), ?, ?)",
+			id, spaceId, authorId, isTogether, title, isAllDay, startAt?.let { ts(it) }, endAt?.let { ts(it) },
+			startDate, endDate, ts(clock.instant()), ts(clock.instant()),
+		)
+		return id
+	}
+
+	/** 일정 알림 한 행을 마음대로 넣는다 */
+	protected fun insertEventReminderRow(eventId: UUID, userId: UUID, option: String, fireAt: Instant, sentAt: Instant? = null) {
+		jdbc.update(
+			"insert into event_reminders (id, event_id, user_id, option, fire_at, sent_at, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?)",
+			UUID.randomUUID(), eventId, userId, option, ts(fireAt), sentAt?.let { ts(it) }, ts(clock.instant()), ts(clock.instant()),
+		)
 	}
 
 	protected fun insertMemo(spaceId: UUID, authorId: UUID, title: String = "테스트 메모"): UUID {

@@ -3,6 +3,7 @@ package com.duriseo.server.couple.application
 import com.duriseo.server.common.access.SpaceAccessPolicy
 import com.duriseo.server.common.api.ApiException
 import com.duriseo.server.common.api.ErrorCode
+import com.duriseo.server.common.persistence.sortedAsPostgres
 import com.duriseo.server.common.api.FieldError
 import com.duriseo.server.common.api.FieldErrorDetails
 import com.duriseo.server.common.api.FieldErrorReason
@@ -100,7 +101,7 @@ class CoupleLinker(
 
 	/** 사용자 행을 UUID 오름차순으로 잠근다. 같은 사용자가 겹치면 한 번만 잠근다 */
 	private fun lockUsersInOrder(userIds: List<UUID>): Map<UUID, User> =
-		userIds.distinct().sorted().associateWith { userService.lockForUpdate(it) }
+		userIds.distinct().sortedAsPostgres().associateWith { userService.lockForUpdate(it) }
 
 	/** 4번: 최근 1시간(지금부터 거꾸로) 실패가 10번 이상이면 429. 10번째로 최근 실패 + 1시간까지 남은 초를 알려 준다 */
 	private fun rejectIfRateLimited(userId: UUID, now: Instant) {

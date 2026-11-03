@@ -1,5 +1,6 @@
 package com.duriseo.server.user.application
 
+import com.duriseo.server.space.application.ImportCounts
 import com.duriseo.server.space.domain.SpaceType
 import com.duriseo.server.user.domain.AccountType
 import com.duriseo.server.user.domain.SocialProvider
@@ -26,7 +27,9 @@ data class MeSpaceView(
 	val partner: MePartnerView?,
 	val togetherColor: String?,
 	val startDate: LocalDate?,
+	val linkedAt: Instant?,
 	val importPending: Boolean,
+	val importCounts: ImportCounts?,
 )
 
 data class MePartnerView(val id: UUID, val nickname: String, val color: String, val hasProfileImage: Boolean)

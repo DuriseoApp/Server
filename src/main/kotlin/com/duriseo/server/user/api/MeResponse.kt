@@ -1,5 +1,6 @@
 package com.duriseo.server.user.api
 
+import com.duriseo.server.space.application.ImportCounts
 import com.duriseo.server.space.domain.SpaceType
 import com.duriseo.server.user.application.MePartnerView
 import com.duriseo.server.user.application.MeSpaceView
@@ -43,7 +44,9 @@ data class MeSpaceResponse(
 	val partner: MePartnerResponse?,
 	val togetherColor: String?,
 	val startDate: LocalDate?,
+	val linkedAt: Instant?,
 	val importPending: Boolean,
+	val importCounts: ImportCountsResponse?,
 ) {
 	companion object {
 		fun from(view: MeSpaceView) = MeSpaceResponse(
@@ -53,8 +56,17 @@ data class MeSpaceResponse(
 			partner = view.partner?.let { MePartnerResponse.from(it) },
 			togetherColor = view.togetherColor,
 			startDate = view.startDate,
+			linkedAt = view.linkedAt,
 			importPending = view.importPending,
+			importCounts = view.importCounts?.let { ImportCountsResponse.from(it) },
 		)
+	}
+}
+
+/** API.md 3.1 `ImportCounts` */
+data class ImportCountsResponse(val events: Int, val anniversaries: Int, val memos: Int) {
+	companion object {
+		fun from(counts: ImportCounts) = ImportCountsResponse(counts.events, counts.anniversaries, counts.memos)
 	}
 }
 

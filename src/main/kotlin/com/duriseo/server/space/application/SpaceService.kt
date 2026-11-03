@@ -26,8 +26,12 @@ data class ActiveSpaceView(
 	val myColor: String,
 	val togetherColor: String?,
 	val startDate: LocalDate?,
+	/** 커플 공간이 연결된 시각 (복구하면 다시 연결한 시각). 개인 공간이면 null (D-94) */
+	val linkedAt: Instant?,
 	val partner: PartnerMembership?,
 	val importPending: Boolean,
+	/** 가져오기 대기 중인 개인 공간의 ID. `importCounts`를 셀 때 쓴다 (D-93). `importPending`이 false면 비어 있다 */
+	val pendingImportSpaceIds: List<UUID>,
 )
 
 data class PartnerMembership(val userId: UUID, val color: String)
@@ -56,14 +60,17 @@ class SpaceService(
 		val partner = members.findAllBySpaceIdAndLeftAtIsNull(space.requireId())
 			.firstOrNull { it.userId != userId }
 			?.let { PartnerMembership(it.userId, it.color) }
+		val pendingImportSpaceIds = members.findLeftSpaceIdsOfType(userId, SpaceType.PERSONAL)
 		return ActiveSpaceView(
 			spaceId = space.requireId(),
 			type = space.type,
 			myColor = membership.color,
 			togetherColor = space.togetherColor,
 			startDate = space.startDate,
+			linkedAt = if (space.type == SpaceType.COUPLE) space.linkedAt else null,
 			partner = if (space.type == SpaceType.COUPLE) partner else null,
-			importPending = members.countLeftSpacesOfType(userId, SpaceType.PERSONAL) > 0,
+			importPending = pendingImportSpaceIds.isNotEmpty(),
+			pendingImportSpaceIds = pendingImportSpaceIds,
 		)
 	}
 
@@ -108,8 +115,8 @@ class SpaceService(
 			.firstOrNull()?.requireId()
 
 	/**
-	 * 이전 커플 공간을 ACTIVE로 되돌린다: `unlinked_at`, `purge_at`을 비우고 두 소속의 `left_at`을 비운다 (FR-COUPLE-06).
-	 * 구성원 색과 '함께' 색, 처음 만난 날, 콘텐츠는 그대로다. 두 사람의 개인 공간 소속을 먼저 정리한 뒤에 부른다
+	 * 이전 커플 공간을 ACTIVE로 되돌린다: `unlinked_at`, `purge_at`을 비우고 두 소속의 `left_at`을 비우며 `linked_at` = [now]로 바꾼다
+	 * (다시 연결한 시각, FR-COUPLE-06, D-94). 구성원 색과 '함께' 색, 처음 만난 날, 콘텐츠는 그대로다. 두 사람의 개인 공간 소속을 먼저 정리한 뒤에 부른다
 	 * (활성 소속은 사용자당 하나라는 부분 UNIQUE `uq_space_members_active_user` 때문).
 	 */
 	@Transactional(propagation = Propagation.MANDATORY)
@@ -127,6 +134,7 @@ class SpaceService(
 	fun createCoupleSpace(creatorUserId: UUID, joinerUserId: UUID, now: Instant): UUID {
 		val space = Space(SpaceType.COUPLE, now)
 		space.togetherColor = PersonColors.PURPLE
+		space.linkedAt = now // 새 커플 공간은 늘 연결 시각이 있다 (ERD 3.2 CHECK, DB-17)
 		spaces.saveAndFlush(space)
 		members.saveAndFlush(SpaceMember(space.requireId(), creatorUserId, PersonColors.ORANGE, now))
 		members.saveAndFlush(SpaceMember(space.requireId(), joinerUserId, PersonColors.BLUE, now))

@@ -2,6 +2,7 @@ package com.duriseo.server.user.application
 
 import com.duriseo.server.common.api.ApiException
 import com.duriseo.server.common.api.ErrorCode
+import com.duriseo.server.couple.application.CoupleContentGateway
 import com.duriseo.server.space.application.SpaceService
 import com.duriseo.server.user.domain.SocialAccountRepository
 import com.duriseo.server.user.domain.UserRepository
@@ -16,6 +17,7 @@ class MeService(
 	private val users: UserRepository,
 	private val socialAccounts: SocialAccountRepository,
 	private val spaceService: SpaceService,
+	private val content: CoupleContentGateway,
 ) {
 
 	/** 내 정보 + 현재 활성 공간 요약 (FR-SET-01, FR-COUPLE-02.AC5). 화면은 이 값을 로컬에 저장해 쓴다 */
@@ -48,7 +50,10 @@ class MeService(
 				partner = partner,
 				togetherColor = space.togetherColor,
 				startDate = space.startDate,
+				linkedAt = space.linkedAt,
 				importPending = space.importPending,
+				// 대기 공간이 있을 때만 요청 때 센다 (D-93). 없으면 null
+				importCounts = if (space.importPending) content.countsOf(space.pendingImportSpaceIds) else null,
 			),
 		)
 	}

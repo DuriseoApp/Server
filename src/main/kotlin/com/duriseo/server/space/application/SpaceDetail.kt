@@ -1,6 +1,7 @@
 package com.duriseo.server.space.application
 
 import com.duriseo.server.space.domain.SpaceType
+import java.time.Instant
 import java.time.LocalDate
 import java.util.UUID
 
@@ -10,6 +11,7 @@ data class SpaceDetail(
 	val type: SpaceType,
 	val togetherColor: String?,
 	val startDate: LocalDate?,
+	val linkedAt: Instant?,
 	val members: List<SpaceMemberDetail>,
 )
 

@@ -254,6 +254,76 @@ class SpaceAccessPolicyTest : IntegrationTestSupport() {
 		assertApiError(ErrorCode.NO_IMPORT_PENDING) { policy.requireImportPending(userId) }
 	}
 
+	// ── R-02·R-13·R-10 (일정, 값만 받는 메서드) ──────────────
+
+	@Test
+	fun `R-02 작성자는 함께가 아닌 일정을 허용하고 함께 일정은 작성자가 아니어도 허용한다`() {
+		val author = UUID.randomUUID()
+		val other = UUID.randomUUID()
+
+		policy.requireEventAuthorOrTogether(author, author, isTogether = false)
+		policy.requireEventAuthorOrTogether(author, author, isTogether = true)
+		policy.requireEventAuthorOrTogether(other, author, isTogether = true)
+	}
+
+	@Test
+	fun `R-02 작성자가 아니고 함께도 아니면 403 NOT_AUTHOR`() {
+		val author = UUID.randomUUID()
+
+		val error = assertApiError(ErrorCode.NOT_AUTHOR) {
+			policy.requireEventAuthorOrTogether(UUID.randomUUID(), author, isTogether = false)
+		}
+		assertEquals(403, error.code.status.value())
+	}
+
+	@Test
+	fun `R-13 작성자는 isTogether를 바꿀 수 있고 값을 바꾸지 않거나 없으면 작성자가 아니어도 된다`() {
+		val author = UUID.randomUUID()
+		val other = UUID.randomUUID()
+
+		policy.requireEventTargetChangeByAuthor(author, author, storedIsTogether = true, requestedIsTogether = false)
+		policy.requireEventTargetChangeByAuthor(author, author, storedIsTogether = false, requestedIsTogether = true)
+		// 저장된 값과 같은 값을 보내면 바꾸지 않는 요청이다 (R-02만 적용)
+		policy.requireEventTargetChangeByAuthor(other, author, storedIsTogether = true, requestedIsTogether = true)
+		policy.requireEventTargetChangeByAuthor(other, author, storedIsTogether = false, requestedIsTogether = false)
+		// 요청에 없으면(null) 바꾸지 않는 요청이다
+		policy.requireEventTargetChangeByAuthor(other, author, storedIsTogether = true, requestedIsTogether = null)
+	}
+
+	@Test
+	fun `R-13 작성자가 아닌 사용자가 isTogether 값을 바꾸면 403 NOT_AUTHOR`() {
+		val author = UUID.randomUUID()
+		val other = UUID.randomUUID()
+
+		assertApiError(ErrorCode.NOT_AUTHOR) {
+			policy.requireEventTargetChangeByAuthor(other, author, storedIsTogether = true, requestedIsTogether = false)
+		}
+		assertApiError(ErrorCode.NOT_AUTHOR) {
+			policy.requireEventTargetChangeByAuthor(other, author, storedIsTogether = false, requestedIsTogether = true)
+		}
+	}
+
+	@Test
+	fun `R-10 커플 공간은 isTogether true를 허용하고 개인 공간은 false나 값 없음만 허용한다`() {
+		val (personalUser, _) = userWithPersonalSpace()
+		val coupleUser = insertUser("MEMBER")
+		val coupleSpace = insertSpace("COUPLE")
+		insertMember(coupleSpace, coupleUser)
+
+		policy.requireEventTargetAllowed(coupleUser, true)
+		policy.requireEventTargetAllowed(coupleUser, false)
+		policy.requireEventTargetAllowed(personalUser, false)
+		policy.requireEventTargetAllowed(personalUser, null)
+	}
+
+	@Test
+	fun `R-10 개인 공간에서 isTogether true는 400 INVALID_TARGET`() {
+		val (personalUser, _) = userWithPersonalSpace()
+
+		val error = assertApiError(ErrorCode.INVALID_TARGET) { policy.requireEventTargetAllowed(personalUser, true) }
+		assertEquals(400, error.code.status.value())
+	}
+
 	// ── R-11 ────────────────────────────────────────────
 
 	@Test
