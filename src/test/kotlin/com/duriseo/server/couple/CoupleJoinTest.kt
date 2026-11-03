@@ -542,6 +542,25 @@ class CoupleJoinTest : IntegrationTestSupport() {
 	}
 
 	@Test
+	fun `FR-COUPLE-03 AC1 일정만 있는 개인 공간도 기록이 있는 공간으로 본다`() {
+		val a = startMember()
+		val b = startMember()
+		val personalOfB = personalSpaceOf(b.userId)
+		insertEvent(personalOfB, b.userId)
+		val code = codeOf(a)
+
+		joinCouple(b.accessToken, code)
+			.andExpect(status().isOk)
+			.andExpect(jsonPath("$.importPending").value(true))
+
+		assertEquals(1, count("select count(*) from spaces where id = ? and type = 'PERSONAL'", personalOfB))
+		assertEquals(1, count("select count(*) from events where space_id = ?", personalOfB))
+		getMe(b.accessToken)
+			.andExpect(jsonPath("$.space.importPending").value(true))
+			.andExpect(jsonPath("$.space.importCounts.events").value(1))
+	}
+
+	@Test
 	fun `FR-COUPLE-03 AC1 연결 응답의 importPending은 요청자 기준이다`() {
 		val a = startMember()
 		val b = startMember()

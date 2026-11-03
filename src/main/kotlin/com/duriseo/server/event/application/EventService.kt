@@ -12,11 +12,15 @@ import com.duriseo.server.event.domain.EventReminderRepository
 import com.duriseo.server.event.domain.EventRepository
 import com.duriseo.server.notification.application.NotificationService
 import com.duriseo.server.space.application.SpaceService
+import com.duriseo.server.user.application.PartnerChangedException
+import com.duriseo.server.user.application.PartnerLockRetry
 import com.duriseo.server.user.application.UserService
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
+import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
@@ -50,7 +54,10 @@ class EventService(
 	private val locker: EventLocker,
 	private val events: ApplicationEventPublisher,
 	private val clock: Clock,
+	transactionManager: PlatformTransactionManager,
 ) {
+
+	private val tx = TransactionTemplate(transactionManager)
 
 	/**
 	 * `GET /events?from=&to=` (FR-CAL-01 AC2, R-01, R-07, R-15). 요청자의 활성 공간 일정 중 범위에 하루라도 걸치는 것을 돌려준다.
@@ -96,16 +103,28 @@ class EventService(
 	 * 일정 알림(`event_reminders`)은 만들지 않는다 (D-59). 검사 순서: R-10 → 값 검사 → 날짜 범위.
 	 * 커플 공간에서 `notifyPartner`가 true면 같은 트랜잭션에서 상대의 `PARTNER_CREATED` 알림 행을 만든다 (D-92). 상대의 `partner_created`
 	 * 설정과 관계없이 행은 만들고 설정은 푸시만 막는다(단위 6, API.md 7장).
+	 *
+	 * 사용자 행을 `FOR KEY SHARE`로 잡은 뒤 활성 공간과 상대를 다시 읽는다. 잡으려고 기다리는 사이 연결 해제가 커밋됐다면 해제된 공간에
+	 * 일정과 알림 행이 남기 때문이다. 바뀌었으면 [PartnerLockRetry] 안에서는 롤백하고 처음부터 다시 하고, 다시 시도할 수 없으면
+	 * 다시 읽은 값(새 공간·새 상대)으로 이어서 쓴다.
 	 */
-	@Transactional
-	fun create(requesterId: UUID, body: Map<String, Any?>): EventView {
+	fun create(requesterId: UUID, body: Map<String, Any?>): EventView =
+		checkNotNull(PartnerLockRetry.run { tx.execute { createInTransaction(requesterId, body) } })
+
+	private fun createInTransaction(requesterId: UUID, body: Map<String, Any?>): EventView {
+		// 행을 넣기 전에 사용자 행을 먼저 잡는다 (클래스 머리말 "잠금")
+		val firstSpaceId = policy.activeSpaceIdOf(requesterId)
+		var partnerId = spaceService.activePartnerIdOf(requesterId)
+		userService.lockKeyShare(listOfNotNull(requesterId, partnerId))
 		val spaceId = checkNotNull(policy.activeSpaceIdOf(requesterId)) { "user has no active space" }
+		val currentPartnerId = spaceService.activePartnerIdOf(requesterId)
+		if (currentPartnerId != partnerId || spaceId != firstSpaceId) {
+			if (PartnerLockRetry.canRetry()) throw PartnerChangedException()
+			partnerId = currentPartnerId
+			userService.lockKeyShare(listOfNotNull(partnerId))
+		}
 		policy.requireEventTargetAllowed(requesterId, body[EventWriteRules.IS_TOGETHER] as? Boolean)
 		val draft = EventWriteRules(zoneOf(requesterId)).parseCreate(body)
-
-		// 행을 넣기 전에 사용자 행을 먼저 잡는다 (클래스 머리말 "잠금")
-		val partnerId = spaceService.activePartnerIdOf(requesterId)
-		userService.lockKeyShare(listOfNotNull(requesterId, partnerId))
 
 		val now = clock.nowInSeconds()
 		val event = eventRepository.save(
@@ -143,6 +162,7 @@ class EventService(
 	 * 일정 행을 잠근 뒤 권한 규칙을 잠근 값으로 확인한다. 거부되면 아무것도 바꾸지 않는다.
 	 * 수정은 상대에게 알림 행을 만들지 않는다. 일시가 바뀌면 같은 트랜잭션에서 그 일정에 알림을 건 모든 사용자의 알림을 다시 처리한다 (D-91):
 	 * 종일 ↔ 시간이 바뀌면 모두 지우고, 종류는 그대로 `start`가 바뀌면 `fire_at`·`sent_at`을 다시 정한다. `end`·제목·메모·대상만 바뀌면 그대로다.
+	 * 저장된 값과 같은 값만 보낸 요청(빈 본문 포함)은 아무것도 바꾸지 않는다: `updated_by`·`updated_at` 그대로, `EventUpdated`도 없다.
 	 */
 	@Transactional
 	fun update(requesterId: UUID, eventId: UUID, body: Map<String, Any?>): EventView {
@@ -150,23 +170,34 @@ class EventService(
 		policy.requireEventTargetChangeByAuthor(requesterId, event.authorId, event.isTogether, body[EventWriteRules.IS_TOGETHER] as? Boolean)
 		policy.requireEventTargetAllowed(requesterId, body[EventWriteRules.IS_TOGETHER] as? Boolean)
 		val patch = EventWriteRules(zoneOf(requesterId)).parsePatch(body, event)
-		val now = clock.nowInSeconds()
+		val view = { EventView.of(event, reminderRepository.findByEventIdAndUserId(eventId, requesterId)) }
+		// 값이 하나도 바뀌지 않으면(빈 본문 포함) 수정자·수정 시각을 바꾸지 않고 이벤트도 발행하지 않는다. 200과 지금의 Event는 그대로 돌려준다
+		val time = patch.time
+		val titleChanged = patch.title != null && patch.title != event.title
+		val noteChanged = patch.noteProvided && patch.note != event.note
+		val togetherChanged = patch.isTogether != null && patch.isTogether != event.isTogether
+		val timeChanged = time != null && (
+			time.isAllDay != event.isAllDay || time.startAt != event.startAt || time.endAt != event.endAt ||
+				time.startDate != event.startDate || time.endDate != event.endDate
+			)
+		if (!titleChanged && !noteChanged && !togetherChanged && !timeChanged) return view()
 
-		patch.title?.let { event.title = it }
-		if (patch.noteProvided) event.note = patch.note
-		patch.isTogether?.let { event.isTogether = it }
-		patch.time?.let { event.changeTime(it.isAllDay, it.startAt, it.endAt, it.startDate, it.endDate) }
-		event.updatedBy = requesterId
-		event.updatedAt = now
-		patch.time?.let { time ->
+		val now = clock.nowInSeconds()
+		if (titleChanged) event.title = checkNotNull(patch.title)
+		if (noteChanged) event.note = patch.note
+		if (togetherChanged) event.isTogether = checkNotNull(patch.isTogether)
+		if (time != null && timeChanged) {
+			event.changeTime(time.isAllDay, time.startAt, time.endAt, time.startDate, time.endDate)
 			if (time.allDayChanged) {
 				reminderService.deleteAllOfEvent(eventId)
 			} else if (time.startChanged) {
 				reminderService.recalculateAllOfEvent(event, now)
 			}
 		}
+		event.updatedBy = requesterId
+		event.updatedAt = now
 		events.publishEvent(EventUpdated(event.spaceId, eventId, requesterId))
-		return EventView.of(event, reminderRepository.findByEventIdAndUserId(eventId, requesterId))
+		return view()
 	}
 
 	/** `DELETE /events/{id}` (FR-CAL-03, R-01 → R-02). 일정 알림은 DB가 CASCADE로 지우고, 그 일정을 가리키는 `notifications` 행은 지우지 않는다 (D-43) */

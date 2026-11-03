@@ -235,8 +235,7 @@ class EventWriteTest : EventTestSupport() {
 	fun `FR-CAL-02 AC2 시간 일정은 start_at·end_at만 저장하고 응답은 UTC 일시다`() {
 		val guest = startGuest()
 
-		// 오프셋이 있는 일시는 UTC로 바꿔 저장한다
-		postEventRaw(guest.accessToken, timedJson(start = "2026-11-03T10:00:00+09:00", end = "2026-11-03T12:30:00+09:00"))
+		postEventRaw(guest.accessToken, timedJson(start = "2026-11-03T01:00:00Z", end = "2026-11-03T03:30:00Z"))
 			.andExpect(status().isCreated)
 			.andExpect(jsonPath("$.isAllDay").value(false))
 			.andExpect(jsonPath("$.start").value("2026-11-03T01:00:00Z"))
@@ -247,6 +246,28 @@ class EventWriteTest : EventTestSupport() {
 		assertEquals(Instant.parse("2026-11-03T03:30:00Z"), endAtOf(id))
 		assertNull(startDateOf(id))
 		assertNull(endDateOf(id))
+	}
+
+	@Test
+	fun `FR-CAL-02 AC2 Z가 아닌 오프셋과 소수 초가 있는 일시는 start와 end 각각 400 VALIDATION_FAILED INVALID다`() {
+		val guest = startGuest()
+
+		for (value in listOf("2026-11-03T10:00:00+09:00", "2026-11-03T01:00:00-00:00", "2026-11-03T01:00:00.5Z", "2026-11-03T01:00:00.123456789Z")) {
+			expectField(
+				postEventRaw(guest.accessToken, timedJson(start = value, end = "2026-11-03T02:00:00Z")).expectError(400, "VALIDATION_FAILED"),
+				0, "start", "INVALID",
+			)
+			expectField(
+				postEventRaw(guest.accessToken, timedJson(start = "2026-11-03T01:00:00Z", end = value)).expectError(400, "VALIDATION_FAILED"),
+				0, "end", "INVALID",
+			)
+		}
+		val id = createEvent(guest.accessToken, timedJson())
+		expectField(
+			patchEvent(guest.accessToken, id, """{"start":"2026-11-03T10:00:00+09:00"}""").expectError(400, "VALIDATION_FAILED"),
+			0, "start", "INVALID",
+		)
+		assertEquals(1, eventCount())
 	}
 
 	@Test
@@ -396,6 +417,51 @@ class EventWriteTest : EventTestSupport() {
 
 		assertEquals("송년회", titleOf(id))
 		assertEquals(1, count("select count(*) from events where id = ? and updated_by = ? and note = '고친 메모'", id, guest.userId))
+	}
+
+	@Test
+	fun `FR-CAL-03 AC1 아무 필드도 바뀌지 않는 PATCH는 200 Event를 돌려주고 updated_by와 updated_at을 바꾸지 않으며 이벤트도 없다`() {
+		val couple = newCouple()
+		val id = createEvent(couple.a.accessToken, timedJson(title = "회식", extra = ""","note":"메모","isTogether":true"""))
+		putReminder(couple.a.accessToken, id, "MIN_10").andExpect(status().isOk)
+		val before = jdbc.queryForList("select * from events").toString()
+		val reminderBefore = jdbc.queryForList("select * from event_reminders").toString()
+		eventChanges.reset()
+		clock.advance(Duration.ofMinutes(5))
+
+		val bodies = listOf(
+			"""{}""",
+			"""{"title":"회식","note":"메모","isTogether":true}""",
+			"""{"isAllDay":false,"start":"2026-11-03T01:00:00Z","end":"2026-11-03T02:00:00Z"}""",
+			"""{"unknown":1}""",
+		)
+		bodies.forEach { json ->
+			patchEvent(couple.b.accessToken, id, json)
+				.andExpect(status().isOk)
+				.andExpect(jsonPath("$.id").value(id.toString()))
+				.andExpect(jsonPath("$.title").value("회식"))
+				.andExpect(jsonPath("$.updatedBy").doesNotExist())
+				.andExpect(jsonPath("$.updatedAt").value("2026-10-26T00:00:00Z"))
+		}
+
+		assertEquals(before, jdbc.queryForList("select * from events").toString())
+		assertEquals(reminderBefore, jdbc.queryForList("select * from event_reminders").toString())
+		assertEquals(0, eventChanges.updated.size)
+	}
+
+	@Test
+	fun `FR-CAL-03 AC1 하나라도 바뀌면 updated_by와 updated_at이 기록되고 이벤트가 한 번 발행된다`() {
+		val guest = startGuest()
+		val id = createEvent(guest.accessToken, allDayJson(title = "회식"))
+		eventChanges.reset()
+		clock.advance(Duration.ofMinutes(1))
+
+		patchEvent(guest.accessToken, id, """{"title":"회식","note":null,"end":"2026-11-04"}""")
+			.andExpect(status().isOk)
+			.andExpect(jsonPath("$.updatedBy").value(guest.userId.toString()))
+			.andExpect(jsonPath("$.updatedAt").value("2026-10-26T00:01:00Z"))
+
+		assertEquals(1, eventChanges.updated.size)
 	}
 
 	@Test

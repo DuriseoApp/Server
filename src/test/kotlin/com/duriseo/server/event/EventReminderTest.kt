@@ -14,6 +14,7 @@ import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
  * 일정 알림 `PUT`·`DELETE /events/{id}/reminder`와 다시 계산 (FR-CAL-05 AC1~AC6, R-01·R-07, API.md 3.3 "알림 시각 계산"·"다시 계산", D-90, D-91).
@@ -420,6 +421,30 @@ class EventReminderTest : EventTestSupport() {
 		deleteReminder(couple.a.accessToken, id).andExpect(status().isNoContent)
 
 		assertEquals(0, eventChanges.created.size + eventChanges.updated.size + eventChanges.deleted.size)
+	}
+
+	@Test
+	fun `R-01 알림을 설정하는 요청과 연결 해제가 동시에 와도 해제 정리 뒤에 알림 행이 남지 않는다`() {
+		repeat(5) {
+			val couple = newCouple()
+			val id = timedTogether(couple.a.accessToken)
+
+			val results = inParallel(
+				listOf(
+					{ statusOf(putReminder(couple.a.accessToken, id, "MIN_10")) },
+					{ statusOf(unlinkCouple(couple.b.accessToken)) },
+					{ statusOf(putReminder(couple.b.accessToken, id, "HOUR_1")) },
+				),
+			)
+
+			// 해제보다 먼저면 200(해제가 지움), 뒤면 R-01로 404
+			assertTrue(results[0] == 200 || results[0] == 404)
+			assertTrue(results[2] == 200 || results[2] == 404)
+			assertEquals(204, results[1])
+			assertEquals(0, count("select count(*) from event_reminders"))
+			putReminder(couple.a.accessToken, id, "MIN_10").expectError(404, "NOT_FOUND")
+			deleteReminder(couple.a.accessToken, id).expectError(404, "NOT_FOUND")
+		}
 	}
 
 	// ── 다시 계산: FR-CAL-05 AC4, D-91 ────────────────────

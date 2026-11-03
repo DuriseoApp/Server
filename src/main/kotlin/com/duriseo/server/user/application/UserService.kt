@@ -3,6 +3,7 @@ package com.duriseo.server.user.application
 import com.duriseo.server.common.access.SpaceAccessPolicy
 import com.duriseo.server.common.api.ApiException
 import com.duriseo.server.common.api.ErrorCode
+import com.duriseo.server.common.persistence.sortedAsPostgres
 import com.duriseo.server.common.time.nowInSeconds
 import com.duriseo.server.space.application.SpaceService
 import com.duriseo.server.user.domain.AccountType
@@ -89,7 +90,7 @@ class UserService(
 	@Transactional(propagation = Propagation.MANDATORY)
 	fun lockForUpdateWithPartner(userId: UUID): User {
 		val locked = mutableMapOf<UUID, User>()
-		listOfNotNull(userId, spaceService.activePartnerIdOf(userId)).sorted().forEach { locked[it] = lockForUpdate(it) }
+		listOfNotNull(userId, spaceService.activePartnerIdOf(userId)).sortedAsPostgres().forEach { locked[it] = lockForUpdate(it) }
 		val current = spaceService.activePartnerIdOf(userId)
 		if (current != null && current !in locked) {
 			if (PartnerLockRetry.canRetry()) throw PartnerChangedException()

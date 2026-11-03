@@ -74,6 +74,25 @@ class CoupleImportTest : IntegrationTestSupport() {
 	}
 
 	@Test
+	fun `FR-COUPLE-03 AC1 import true면 일정이 author_id·is_together·일정 알림을 유지한 채 커플 공간으로 옮겨진다`() {
+		val a = startMember("에이")
+		val b = startMember("비비")
+		val personalOfB = activeSpaceIdOfUser(b.userId)
+		val eventId = insertEventRow(personalOfB, b.userId, title = "비비의 일정", isTogether = false, startDate = "2026-11-03", endDate = "2026-11-03")
+		val fireAt = java.time.Instant.parse("2026-11-03T00:00:00Z")
+		insertEventReminderRow(eventId, b.userId, "ALLDAY_9AM", fireAt)
+		val coupleSpaceId = connect(a, b)
+
+		importRecords(b.accessToken, true).andExpect(status().isNoContent)
+
+		assertEquals(coupleSpaceId, spaceOfRecord("events", eventId))
+		assertEquals(1, count("select count(*) from events where id = ? and author_id = ? and is_together = false", eventId, b.userId))
+		assertEquals(1, count("select count(*) from event_reminders where event_id = ? and user_id = ? and option = 'ALLDAY_9AM'", eventId, b.userId))
+		assertEquals(fireAt, instantOf("select fire_at from event_reminders where event_id = ? and user_id = ?", eventId, b.userId))
+		assertEquals(0, count("select count(*) from spaces where id = ?", personalOfB))
+	}
+
+	@Test
 	fun `FR-COUPLE-03 AC2 import false면 개인 공간과 그 기록·알림이 지워진다`() {
 		val couple = pendingCouple()
 		insertNotification(couple.b.userId, couple.personalOfB)

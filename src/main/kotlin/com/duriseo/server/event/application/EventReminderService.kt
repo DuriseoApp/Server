@@ -46,6 +46,7 @@ class EventReminderService(
 	 */
 	@Transactional
 	fun put(requesterId: UUID, eventId: UUID, body: Map<String, Any?>): EventView {
+		lockRequester(requesterId)
 		val event = locker.lockInActiveSpace(requesterId, eventId)
 		val option = parseOption(body, event)
 		val now = clock.nowInSeconds()
@@ -65,8 +66,17 @@ class EventReminderService(
 	/** `DELETE /events/{id}/reminder` (204). R-01만 본다. 알림이 없어도 성공이고, 상대의 알림은 건드리지 않는다 (R-07) */
 	@Transactional
 	fun delete(requesterId: UUID, eventId: UUID) {
+		lockRequester(requesterId)
 		locker.lockInActiveSpace(requesterId, eventId)
 		reminders.deleteOfEventAndUser(eventId, requesterId)
+	}
+
+	/**
+	 * R-01 전에 요청자의 사용자 행을 `FOR KEY SHARE`로 잡는다. 연결 해제는 두 사용자 행을 `FOR UPDATE`로 잡은 채 공간의 알림을 지우므로,
+	 * 해제가 진행 중이면 여기서 끝나기를 기다리고, 해제가 커밋된 뒤의 R-01은 활성 공간이 바뀌어 404가 된다. 알림 행이 해제 정리 뒤에 남지 않는다.
+	 */
+	private fun lockRequester(requesterId: UUID) {
+		userService.lockKeyShare(listOf(requesterId))
 	}
 
 	/** 종일 ↔ 시간 일정으로 바뀌었다: 그 일정의 알림을 **모든 사용자 것** 지운다 (D-91). 일정 수정과 같은 트랜잭션이다 */

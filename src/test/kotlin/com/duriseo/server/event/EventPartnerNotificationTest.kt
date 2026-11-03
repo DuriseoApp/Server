@@ -248,6 +248,33 @@ class EventPartnerNotificationTest : EventTestSupport() {
 		}
 	}
 
+	@Test
+	fun `D-45 일정을 만드는 요청과 연결 해제가 동시에 와도 해제된 공간에 PARTNER_CREATED 행이 남지 않는다`() {
+		repeat(5) {
+			val couple = newCouple()
+
+			val results = inParallel(
+				listOf(
+					{ statusOf(postEventRaw(couple.a.accessToken, allDayJson(title = "동시 A"))) },
+					{ statusOf(unlinkCouple(couple.b.accessToken)) },
+					{ statusOf(postEventRaw(couple.a.accessToken, allDayJson(title = "동시 B"))) },
+				),
+			)
+
+			assertEquals(listOf(201, 204, 201), results)
+			// 해제 뒤에 해제된 공간으로 들어간 알림 행이 없다 (해제 앞이면 해제가 지웠고, 뒤면 개인 공간으로 갔다)
+			assertEquals(0, count("select count(*) from notifications where space_id = ?", couple.spaceId))
+			assertEquals(0, count("select count(*) from notifications where type = 'PARTNER_CREATED' and user_id = ?", couple.b.userId))
+			// 두 일정 모두 만들어졌고, 해제 앞이면 커플 공간에, 뒤면 A의 현재(개인) 공간에 있다
+			val currentSpace = activeSpaceIdOfUser(couple.a.userId)
+			assertTrue(currentSpace != couple.spaceId)
+			assertEquals(
+				2,
+				count("select count(*) from events where author_id = ? and space_id in (?, ?)", couple.a.userId, couple.spaceId, currentSpace),
+			)
+		}
+	}
+
 	// ── 도메인 이벤트: API.md 6장 ────────────────────────
 
 	@Test

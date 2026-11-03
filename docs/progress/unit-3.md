@@ -1,6 +1,6 @@
 # 단위 3: 캘린더 — 일정, 일정 알림, 날짜 범위 (event)
 
-> 브랜치: `feat/3-calendar` · PR: #8 · 상태: **구현 1부·2부 완료** (V2 마이그레이션, `linkedAt`·`importCounts`, 일정 API 7개 경로, 일정 알림 계산·다시 계산, `PARTNER_CREATED` 행, 일정 도메인 이벤트, 단위 2 연결점 이전). CI(`./gradlew build`)로 확인 대기: 이 환경은 Gradle 플러그인·Docker에 닿지 않아 컴파일·테스트를 돌리지 못했다
+> 브랜치: `feat/3-calendar` · PR: https://github.com/DuriseoApp/Server/pull/8 · 상태: **구현 1부·2부 완료, 리뷰 1회차 반영 중** (CI 564개 통과, 커밋 b122246. 1회차 수정은 CI 확인 대기: 이 환경은 Gradle 플러그인·Docker에 닿지 않는다)
 > 기준: PRD v0.9 (D-89~D-103 포함. 처음 범위를 잡을 때는 v0.8이었다. 처음 범위 목록: FR-CAL-01 AC2·AC6, FR-CAL-02, FR-CAL-03, FR-CAL-05, FR-NOTI-04 일부, NFR-SEC-02, NFR-TIME-01, NFR-LIMIT-01, NFR-SYNC-01·03, D-10, D-12, D-13, D-16, D-34, D-35, D-52, D-59, D-64, D-74, D-77), API.md 1장·1.1·2장(R-01·R-02·R-07·R-10·R-13·R-15)·3.3(일정 6개 경로)·3.5·5장·6장·7장, ERD 3.3(events·event_reminders)·4.1·4.2·4.3·4.5·5장(DB-05·06·07·13)
 > Docs 기준 커밋: DuriseoApp/Docs main `728ea08` (PRD v0.9, Docs PR #10 머지). 처음 범위를 잡을 때는 `afc3d1b`(PRD v0.8)였다. 읽은 경로는 `/home/claude/docs-main` (`../Docs` 대신)
 > 앞 단위: 단위 2 머지됨 (main `7016114`)
@@ -205,14 +205,14 @@ AC 하나에 테스트 하나 이상 (CONVENTIONS). "앱 동작"은 서버 API�
 
 ### 4. ERD 테이블과 제약
 
-V1에 모두 있다. **새 마이그레이션은 없을 예정**이다 (V1의 `ck_events_time_columns`, `ix_events_space_start_at`, `ix_events_space_start_date`, `ck_event_reminders_option`, `uq_event_reminders_event_user`, `ix_event_reminders_unsent_fire_at`를 그대로 쓴다).
+일정 테이블·제약은 V1에 모두 있다. 새 마이그레이션은 `V2__add_spaces_linked_at.sql` 하나다(`spaces.linked_at`, D-94). 일정 쪽은 (V1의 `ck_events_time_columns`, `ix_events_space_start_at`, `ix_events_space_start_date`, `ck_event_reminders_option`, `uq_event_reminders_event_user`, `ix_event_reminders_unsent_fire_at`를 그대로 쓴다.)
 
 | 테이블 | 단위 3에서 하는 일 | 사용하는 제약·인덱스 |
 | --- | --- | --- |
 | events | 생성·조회·수정·삭제. 개인 공간은 `is_together = false`만 (서비스 규칙). `start`/`end` 날짜 범위는 서비스에서 검사 (DB-13). 가져오기 때 `space_id` 이동, 기록 유무 확인 (단위 2 연결점) | `ck_events_time_columns`(종일이면 날짜만, 아니면 일시만, 끝 >= 시작), `ix_events_space_start_at`, `ix_events_space_start_date` (범위 조회: `start <= 범위끝 AND end >= 범위시작`). FK `author_id`·`updated_by` RESTRICT, `space_id` CASCADE |
 | event_reminders | 사용자별 알림 만들기·바꾸기·지우기, 일시 변경 재계산, 시간대 변경 재계산, 해제 때 공간 단위 삭제, 탈퇴 때 사용자 단위 삭제 (단위 2 연결점) | `uq_event_reminders_event_user`(일정당 사용자별 하나), `ck_event_reminders_option`(`AT_TIME`, `MIN_10`, `HOUR_1`, `DAY_1`, `ALLDAY_9AM`, `ALLDAY_PREV_9AM`), 부분 `ix_event_reminders_unsent_fire_at`(단위 6 스케줄러). "없음"은 행이 없는 것 |
 | notifications | `PARTNER_CREATED` 행. `space_id` = 커플 공간, `target_type` `EVENT`, `target_id` 일정 ID. 일정을 지워도 행은 지우지 않는다 (D-43) | `ck_notifications_type`, `ck_notifications_target_type` |
-| users | 요청자의 `time_zone`(날짜 판단, 종일 알림 시각), 알림 문구의 작성자 닉네임, 상대 ID | — (일정 쓰기는 사용자 행을 잠그지 않는다, 아래 5장) |
+| users | 요청자의 `time_zone`(날짜 판단, 종일 알림 시각), 알림 문구의 작성자 닉네임, 상대 ID | `FOR KEY SHARE`(일정 생성과 알림 설정이 요청자·상대 행을 먼저 잡는다, 아래 5장). `FOR UPDATE`는 쓰지 않는다 |
 | spaces, space_members | 활성 공간·종류(개인/커플)·상대 확인 (읽기만) | — |
 
 | ERD 수명주기 | 단위 3 |
@@ -235,7 +235,7 @@ V1에 모두 있다. **새 마이그레이션은 없을 예정**이다 (V1의 `c
 
 ### 5. 동시성, 잠금, 구현 위험
 
-단위 2의 잠금 순서(users UUID 오름차순 → invite_codes → spaces)를 지킨다. 일정 쓰기는 두 사람이 동시에 움직일 수 있지만 사용자·공간 행을 잠그지 않는다.
+단위 2의 잠금 순서(users UUID 오름차순 → invite_codes → spaces)를 지킨다. 일정 쓰기는 두 사람이 동시에 움직일 수 있지만 공간 행을 잠그지 않는다. 사용자 행은 `FOR UPDATE`가 아니라 `FOR KEY SHARE`로만 잡는다(생성은 요청자·상대, 알림 설정은 요청자).
 
 | 흐름 | 잠금 | 막는 경쟁 |
 | --- | --- | --- |
@@ -246,10 +246,10 @@ V1에 모두 있다. **새 마이그레이션은 없을 예정**이다 (V1의 `c
 
 그 밖의 위험:
 
-1. **해제와 `PUT reminder`의 경쟁.** 해제는 공간 행을 `UNLINKED`로 바꾸며 그 공간 `event_reminders`를 지운다. 일정 쪽은 공간 행을 잠그지 않으므로 해제가 커밋된 직후 R-01 검사를 통과한 `PUT reminder`가 해제된 공간의 일정에 알림 행을 다시 만들 수 있다. 단위 3은 R-01의 활성 공간 검사를 같은 트랜잭션 안에서 하고, 단위 6 스케줄러는 `spaces.status = ACTIVE`인 일정만 보내도록 남은 일에 적는다.
+1. **연결 해제와 겹친 쓰기의 행이 해제 정리 뒤에 남는 경쟁** (리뷰 1회차 Major). 해제는 사용자 행을 `FOR UPDATE`로 잡은 채 공간을 `UNLINKED`로 바꾸고 그 공간의 알림 행을 지운다. 일정 쪽이 R-01·공간 읽기 뒤에 사용자 행을 기다리면 해제 커밋 뒤에 해제된 공간으로 행이 들어간다. 대책: `POST /events`는 요청자·상대를 `FOR KEY SHARE`로 잡은 뒤 활성 공간·상대를 다시 읽고, 바뀌었으면 `PartnerLockRetry` 안에서 롤백하고 처음부터 다시 한다(재시도를 다 쓰면 다시 읽은 값으로 새 공간에 쓴다). `PUT`·`DELETE reminder`는 R-01 전에 요청자 행을 `FOR KEY SHARE`로 잡아, 해제 커밋 뒤에는 R-01에서 404가 난다. 단위 6 스케줄러에 맡기지 않는다.
 2. **시간대·날짜 변환 경계.** 시간 일정의 날짜 범위(R-15)와 조회 경계, 종일 알림 시각은 모두 `users.time_zone`으로 계산한다. 서머타임이 있는 시간대에서 "1일 전"(`DAY_1`)은 24시간 전이다 (D-90). `Clock` 빈으로 고정한 시각으로 테스트한다 (ARCHITECTURE 6장).
 3. **범위 조회 쿼리.** 종일(`start_date`/`end_date`)과 시간(`start_at`/`end_at`) 일정이 서로 다른 컬럼·인덱스라 두 조건을 합쳐야 한다. 요청자 시간대의 `from` 0시 ~ `to` 다음 날 0시를 UTC 일시로 바꿔 시간 일정에 쓰고, 종일 일정에는 날짜 그대로 쓴다. 3개월 범위라 페이지는 없지만 한 달 일정이 많아도 메모리가 작은 서버(ARCHITECTURE 7장)에서 문제없도록 필요한 컬럼만 읽는다.
-4. **JPA 쓰기 순서.** 재계산은 같은 트랜잭션의 일괄 UPDATE(`event_reminders.fire_at`)로 하고, 영속성 컨텍스트의 엔티티를 그 뒤에 쓰지 않는다 (단위 2 `clearAutomatically` 규칙). 일정 행 수정과 알림 재계산 순서에는 UNIQUE 충돌이 없다.
+4. **JPA 쓰기 순서.** 재계산은 같은 트랜잭션에서 알림 엔티티를 고쳐 쓰고(`reschedule`), 종일↔시간 전환의 삭제만 일괄 DELETE(`flushAutomatically`)다. 일정 행 수정과 알림 재계산 순서에는 UNIQUE 충돌이 없다.
 5. **의존 방향.** `couple` → `event`(서비스만), `user.WithdrawalDataEraser` → `event`(알림 서비스만), `event` → `space`·`user`·`notification`(서비스만). `event`가 `couple`을 알면 안 된다. 같은 방식으로 단위 2가 `user` → `couple`·`notification` 의존을 만들었다.
 
 ## 단위 6과의 경계 (지금 할 것과 미룰 것)
@@ -357,12 +357,27 @@ API 7장: "모든 알림 작업은 받는 사람마다 `notifications` 행을 �
 
 | 회차 | Critical | Major | 비고 |
 | --- | --- | --- | --- |
+| 1 | 0 | 1 | Minor 6. 처리는 아래 |
+
+**1회차 처리**
+
+- Major 연결 해제와 겹친 쓰기: 위 "동시성" 위험 1. 코드 `EventService.create`(`TransactionTemplate` + `PartnerLockRetry`, `lockKeyShare` 뒤 공간·상대 재확인), `EventReminderService.lockRequester`. 테스트: `D-45 일정을 만드는 요청과 연결 해제가 동시에 와도 …`, `R-01 알림을 설정하는 요청과 연결 해제가 동시에 와도 …`
+- Minor 일시 형식: `YYYY-MM-DDTHH:MM:SSZ`만 받는다(리드 결정). `Z`가 아닌 오프셋과 소수 초는 (`start`/`end`, `INVALID`). 테스트: `FR-CAL-02 AC2 Z가 아닌 오프셋과 소수 초가 있는 일시는 …`
+- Minor UUID 잠금 순서: Kotlin `sorted()`(부호 있는 비교)를 PostgreSQL `order by`와 같은 부호 없는 비교(`common/persistence/UuidOrder.kt`의 `sortedAsPostgres`)로 바꿨다. `UserService.lockForUpdateWithPartner`, `CoupleLinker.lockUsersInOrder`에 적용
+- Minor 빈 본문 `PATCH`: 저장값과 같은 값만 보내면 `updated_by`·`updated_at`을 바꾸지 않고 `EventUpdated`도 없다(200 `Event`는 그대로). 테스트: `FR-CAL-03 AC1 아무 필드도 바뀌지 않는 PATCH는 …`, `… 하나라도 바뀌면 …`
+- Minor 계획된 테스트 2개: `FR-COUPLE-03 AC1 일정만 있는 개인 공간도 기록이 있는 공간으로 본다`(`CoupleJoinTest`), `FR-COUPLE-03 AC1 import true면 일정이 author_id·is_together·일정 알림을 유지한 채 커플 공간으로 옮겨진다`(`CoupleImportTest`)
+- Minor 진행 기록의 오래된 문장("새 마이그레이션 없음", "사용자 행을 잠그지 않는다")을 고쳤다
+
+## Docs 후속 (Docs 레포 `/prd-sync`가 할 일)
+
+- API.md 1장에 일시 형식은 `YYYY-MM-DDTHH:MM:SSZ`만이고 `Z`가 아닌 오프셋과 소수 초는 받지 않는다고 명시 (서버는 `start`/`end` `INVALID`로 거부한다)
+
 
 ## 남은 일
 
 - CI에서 `./gradlew build` 초록불 확인 (이 환경은 Gradle 플러그인·Docker에 닿지 않아 1부·2부 코드를 컴파일도 못 돌렸다. 1부는 CI 500개 통과)
 - 단위 4·5: `CoupleContentGateway`에 남은 `anniversaries`·`memos` 네이티브 SQL(`hasContent`·`countsOf`·`moveAll`)을 각 도메인 서비스로 옮기고 이 클래스를 없앤다. `WithdrawalDataEraser`의 `memo_favorites` 삭제는 단위 5
-- 단위 6: 1분 일정 알림 스케줄러(`EVENT_REMINDER` 행, `sent_at IS NULL`이고 `fire_at <= now`, 푸시, `spaces.status = ACTIVE` 일정만), 일정 도메인 이벤트(`EventCreated`·`EventUpdated`·`EventDeleted`)를 듣는 SYNC `EVENT`, `PARTNER_CREATED` 푸시(상대의 `partner_created` 설정과 유효 세션을 본다)와 `NOTIFICATION` 신호
+- 단위 6: 1분 일정 알림 스케줄러(`EVENT_REMINDER` 행, `sent_at IS NULL`이고 `fire_at <= now`, 푸시), 일정 도메인 이벤트(`EventCreated`·`EventUpdated`·`EventDeleted`)를 듣는 SYNC `EVENT`, `PARTNER_CREATED` 푸시(상대의 `partner_created` 설정과 유효 세션을 본다)와 `NOTIFICATION` 신호
 - Android: 일정 응답 모양·오류 코드·알림 option 값은 API.md 3.3 (v0.9)를 따른다
 
 ## 확인 필요

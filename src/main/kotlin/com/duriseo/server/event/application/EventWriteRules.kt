@@ -206,7 +206,7 @@ class EventWriteRules(private val zone: ZoneId) {
 		}
 	}
 
-	/** ISO 8601 일시 (`2026-10-17T06:30:00Z`). 초 단위로 맞춰 저장한다 */
+	/** API 1장 예시 형식 `YYYY-MM-DDTHH:MM:SSZ`만 받는다. `Z`가 아닌 오프셋과 소수 초는 `INVALID`다 (리드 결정) */
 	private fun parseDateTime(text: String): Instant? {
 		if (!DATE_TIME_FORMAT.matches(text)) return null
 		return try {
@@ -293,6 +293,6 @@ class EventWriteRules(private val zone: ZoneId) {
 		val MAX_DATE: LocalDate = LocalDate.of(2050, 12, 31)
 
 		private val DATE_FORMAT = Regex("""\d{4}-\d{2}-\d{2}""")
-		private val DATE_TIME_FORMAT = Regex("""\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})""")
+		private val DATE_TIME_FORMAT = Regex("""\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z""")
 	}
 }
