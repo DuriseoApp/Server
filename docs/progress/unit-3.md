@@ -1,6 +1,6 @@
 # 단위 3: 캘린더 — 일정, 일정 알림, 날짜 범위 (event)
 
-> 브랜치: `feat/3-calendar` · PR: https://github.com/DuriseoApp/Server/pull/8 · 상태: **구현 1부·2부 완료, 리뷰 2회차 머지 가능** (CI 571개 통과, 두 번. 2회차 Minor 정리는 CI 확인 대기: 이 환경은 Gradle 플러그인·Docker에 닿지 않는다)
+> 브랜치: `feat/3-calendar` · PR: https://github.com/DuriseoApp/Server/pull/8 · 상태: **PR 완료** (구현 1부·2부, 리뷰 2회차 머지 가능, 2회차 Minor 정리 뒤 CI 572개 통과)
 > 기준: PRD v0.9 (D-89~D-103 포함. 처음 범위를 잡을 때는 v0.8이었다. 처음 범위 목록: FR-CAL-01 AC2·AC6, FR-CAL-02, FR-CAL-03, FR-CAL-05, FR-NOTI-04 일부, NFR-SEC-02, NFR-TIME-01, NFR-LIMIT-01, NFR-SYNC-01·03, D-10, D-12, D-13, D-16, D-34, D-35, D-52, D-59, D-64, D-74, D-77), API.md 1장·1.1·2장(R-01·R-02·R-07·R-10·R-13·R-15)·3.3(일정 6개 경로)·3.5·5장·6장·7장, ERD 3.3(events·event_reminders)·4.1·4.2·4.3·4.5·5장(DB-05·06·07·13)
 > Docs 기준 커밋: DuriseoApp/Docs main `728ea08` (PRD v0.9, Docs PR #10 머지). 처음 범위를 잡을 때는 `afc3d1b`(PRD v0.8)였다. 읽은 경로는 `/home/claude/docs-main` (`../Docs` 대신)
 > 앞 단위: 단위 2 머지됨 (main `7016114`)
