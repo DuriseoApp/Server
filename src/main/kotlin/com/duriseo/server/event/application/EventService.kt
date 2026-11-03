@@ -33,10 +33,10 @@ import java.util.UUID
  * 권한은 모두 [SpaceAccessPolicy]가 검사하고(다른 공간의 일정은 403이 아니라 404, DB-05) 이 서비스는 따로 검사하지 않는다.
  *
  * **잠금:** 일정 쓰기는 공간 행을 잠그지 않는다. 공간 행을 잠근 채 알림 행(`PARTNER_CREATED`)을 넣으면 알림의 외래 키 검사가
- * 상대 `users` 행에 `FOR KEY SHARE`를 요구하고, 그 행을 `FOR UPDATE`로 잡은 상대의 탈퇴가 공간 행을 기다리다 교착하기 때문이다
+ * 상대 `users` 행에 `FOR SHARE`를 요구하고, 그 행을 `FOR UPDATE`로 잡은 상대의 탈퇴가 공간 행을 기다리다 교착하기 때문이다
  * (ARCHITECTURE 4장). 수정·삭제는 그 일정 행만 `FOR UPDATE`로 잠그고 R-01·R-02·R-13·R-10을 잠근 값으로 다시 확인한다.
- * 만들기는 일정·알림 행을 넣기 전에 요청자와 상대의 `users` 행을 ID 오름차순으로 `FOR KEY SHARE`로 먼저 잡는다: 일정의 외래 키 검사가
- * 공간 행에 `FOR KEY SHARE`를 잡은 채 사용자 행을 기다리면, 사용자 행 → 공간 행 순서로 잠그는 탈퇴·연결 해제와 교착하기 때문이다.
+ * 만들기는 일정·알림 행을 넣기 전에 요청자와 상대의 `users` 행을 ID 오름차순으로 `FOR SHARE`로 먼저 잡는다: 일정의 외래 키 검사가
+ * 공간 행에 `FOR SHARE`를 잡은 채 사용자 행을 기다리면, 사용자 행 → 공간 행 순서로 잠그는 탈퇴·연결 해제와 교착하기 때문이다.
  * 함께 일정의 동시 수정은 마지막 저장이 이긴다 (NFR-SYNC-03, 낙관적 락 없음).
  *
  * 일정 알림(`PUT`·`DELETE /events/{id}/reminder`)과 다시 계산의 계산식은 [EventReminderService]가 한다.
@@ -104,7 +104,7 @@ class EventService(
 	 * 커플 공간에서 `notifyPartner`가 true면 같은 트랜잭션에서 상대의 `PARTNER_CREATED` 알림 행을 만든다 (D-92). 상대의 `partner_created`
 	 * 설정과 관계없이 행은 만들고 설정은 푸시만 막는다(단위 6, API.md 7장).
 	 *
-	 * 사용자 행을 `FOR KEY SHARE`로 잡은 뒤 활성 공간과 상대를 다시 읽는다. 잡으려고 기다리는 사이 연결 해제가 커밋됐다면 해제된 공간에
+	 * 사용자 행을 `FOR SHARE`로 잡은 뒤 활성 공간과 상대를 다시 읽는다. 잡으려고 기다리는 사이 연결 해제가 커밋됐다면 해제된 공간에
 	 * 일정과 알림 행이 남기 때문이다. 바뀌었으면 [PartnerLockRetry] 안에서는 롤백하고 처음부터 다시 하고, 다시 시도할 수 없으면
 	 * 다시 읽은 값(새 공간·새 상대)으로 이어서 쓴다.
 	 */
@@ -115,13 +115,13 @@ class EventService(
 		// 행을 넣기 전에 사용자 행을 먼저 잡는다 (클래스 머리말 "잠금")
 		val firstSpaceId = policy.activeSpaceIdOf(requesterId)
 		var partnerId = spaceService.activePartnerIdOf(requesterId)
-		userService.lockKeyShare(listOfNotNull(requesterId, partnerId))
+		userService.lockShare(listOfNotNull(requesterId, partnerId))
 		val spaceId = checkNotNull(policy.activeSpaceIdOf(requesterId)) { "user has no active space" }
 		val currentPartnerId = spaceService.activePartnerIdOf(requesterId)
 		if (currentPartnerId != partnerId || spaceId != firstSpaceId) {
 			if (PartnerLockRetry.canRetry()) throw PartnerChangedException()
 			partnerId = currentPartnerId
-			userService.lockKeyShare(listOfNotNull(partnerId))
+			userService.lockShare(listOfNotNull(partnerId))
 		}
 		policy.requireEventTargetAllowed(requesterId, body[EventWriteRules.IS_TOGETHER] as? Boolean)
 		val draft = EventWriteRules(zoneOf(requesterId)).parseCreate(body)

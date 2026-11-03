@@ -81,7 +81,7 @@ class UserService(
 	/**
 	 * 사용자 행과 커플 상대의 행을 **UUID 오름차순**으로 잠그고(SELECT … FOR UPDATE) 사용자를 돌려준다. 연결 해제와 탈퇴가 쓴다.
 	 * 두 사람이 한 커플 공간을 해제·탈퇴하는 흐름은 모두 사용자 둘을 같은 순서로 잠근 뒤에 공간 행을 잠가야 한다:
-	 * 한쪽이 공간 행을 먼저 잡고 상대 알림·개인 공간 소속을 넣으면(외래 키 검사가 상대 행에 `FOR KEY SHARE`를 요구) 상대 행을
+	 * 한쪽이 공간 행을 먼저 잡고 상대 알림·개인 공간 소속을 넣으면(외래 키 검사가 상대 행에 `FOR SHARE`를 요구) 상대 행을
 	 * 잡은 쪽과 교착한다 (잠금 순서 users → invite_codes → spaces).
 	 * 상대는 잠금 없이 먼저 읽는다. 잠근 뒤 상대가 바뀌었으면(그 사이 연결·해제됨) [PartnerLockRetry] 안에서는
 	 * [PartnerChangedException]을 던져 트랜잭션을 롤백하고 처음부터 다시 잠그게 한다. 다시 시도할 수 없으면(재시도를 다 썼거나
@@ -100,12 +100,12 @@ class UserService(
 	}
 
 	/**
-	 * [userIds]의 사용자 행을 ID 오름차순으로 `FOR KEY SHARE`로 잠근다 (탈퇴·연결 해제의 `FOR UPDATE`가 끝나기를 기다리고 서로는 막지 않는다).
+	 * [userIds]의 사용자 행을 ID 오름차순으로 `FOR SHARE`로 잠근다 (탈퇴·연결 해제의 `FOR UPDATE`가 끝나기를 기다리고 서로는 막지 않는다).
 	 * 일정처럼 공간 행을 참조하는 행을 넣기 전에 부른다. 잠금 순서 users → … → spaces 안에서 사용자 행을 먼저 잡으려는 것이다.
 	 */
 	@Transactional(propagation = Propagation.MANDATORY)
-	fun lockKeyShare(userIds: Collection<UUID>) {
-		if (userIds.isNotEmpty()) users.lockKeyShare(userIds.distinct())
+	fun lockShare(userIds: Collection<UUID>) {
+		if (userIds.isNotEmpty()) users.lockShare(userIds.distinct())
 	}
 
 	/** 공간 구성원 목록이 보여 줄 닉네임·프로필 사진 여부 (`GET /space`, API.md 3.2 `SpaceMember`). 없는 ID는 결과에 없다 */
