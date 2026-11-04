@@ -128,6 +128,14 @@ class SpaceAccessPolicy(private val em: EntityManager) {
 	}
 
 	/**
+	 * R-05: 직접 기념일 수정·삭제는 요청자 = `author_id`일 때만. 아니면 403 `NOT_AUTHOR`.
+	 * 기념일 엔티티를 모르는 `common`이라 값만 받는다. R-01(404)을 통과한 뒤, 기념일 행을 잠근 상태에서 부른다.
+	 */
+	fun requireAnniversaryAuthor(requesterId: UUID, authorId: UUID) {
+		if (requesterId != authorId) throw notAuthor()
+	}
+
+	/**
 	 * R-11: 프로필 사진 조회는 본인 또는 같은 활성 공간의 구성원만. 아니면 404 `NOT_FOUND`.
 	 * 없는 사용자, 탈퇴한 사용자(`deleted_at` 있음), 다른 공간의 사용자, 연결이 해제된 이전 상대는 모두 같은 404다.
 	 */

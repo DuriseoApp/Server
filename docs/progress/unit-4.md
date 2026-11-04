@@ -1,6 +1,6 @@
 # 단위 4: 기념일 — 자동 기념일 계산, 직접 기념일, 목록 2종 (anniversary)
 
-> 브랜치: `feat/4-anniversary` · PR: (아직 없음) · 상태: **범위 확정 대기** (사람 확인 전, 코드 없음)
+> 브랜치: `feat/4-anniversary` · PR: (아직 없음) · 상태: **구현 1부 완료, CI 확인 대기** (문서로 확정된 부분만. 확인 필요 1~5는 PRD v0.10 반영 대기)
 > 기준: PRD v0.9, API.md 1장·1.1·2장(R-01·R-05·R-15)·3.3 기념일·5장·6장·7장(기념일 알림 줄), ERD 3.3(anniversaries)·4.1·4.2·4.3·4.4·5장(DB-01·05·13)
 > Docs 기준 커밋: DuriseoApp/Docs main `728ea08` (PRD v0.9). 읽은 경로는 `/home/claude/docs-main` (`../Docs` 대신)
 > 앞 단위: 단위 3 머지됨 (main `ebc4f71`, 개발 서버 배포)
@@ -218,9 +218,52 @@ JVM 메서드 이름에 `/`를 못 쓰므로 경로는 `GET anniversaries`처럼
 | 매시 정각 기념일 알림 스케줄러, `ANNIVERSARY` 행·문구·푸시 | 6 (확인 필요 7) | API 7장 593행, PLAN 단위 6 |
 | 기념일 계산기(특정 날짜의 기념일 구하기) | **4** (단위 6이 재사용) | 확인 필요 7 |
 
+## 구현 1부 (문서로 이미 확정된 부분만, CI 확인 대기)
+
+사용자가 확인 필요 1~8을 추천안대로 하기로 했고 Docs는 PRD v0.10 + `/prd-sync`로 반영 중이다. 머지 전에는 문서로 확정된 부분만 구현했다. 이 환경은 Gradle 배포판을 받지 못해(프록시 403) 컴파일·테스트를 돌리지 못했다. CI에서 확인한다.
+
+### 만든 것
+
+- `anniversary/domain`: `Anniversary`, `AnniversaryRepository`
+- `anniversary/application`:
+  - `AnniversaryCalculator`(순수 계산: 자동 기념일 100일 단위·매년 N주년, 직접 기념일 발생일, 1950~2050 범위), `AutoAnniversary`·`AutoAnniversaryType`
+  - `AnniversaryContentService`(`countIn`, `moveAll`, `EventContentService`와 같은 모양)
+  - `AnniversaryQueryService`(`upcoming`, `past`: 전체 목록. 커서·`size` 없음)
+  - `AnniversaryService`(`delete`, POST용 `inLockedActiveSpace`), `AnniversaryLocker`, `AnniversaryDeleted`
+- `anniversary/api/AnniversaryController`: **`DELETE /anniversaries/{id}`만**
+- `common/access/SpaceAccessPolicy.requireAnniversaryAuthor` (R-05)
+- `couple/application/CoupleContentGateway`: 기념일 SQL 3곳(`hasContent`·`countsOf`·`moveAll`)을 `AnniversaryContentService` 호출로 바꿨다. 생성자에 `AnniversaryContentService`가 더해졌다(호출부는 Spring 주입뿐이라 고칠 곳 없음). 해제·가져오기 동작은 그대로
+- `UserZones`를 `event/application`에서 `common/time`으로 옮겼다 (일정·기념일이 함께 쓴다). 쓰는 곳 `EventService`, `EventReminderService`의 import를 고쳤다
+
+### 테스트 (`src/test/kotlin/com/duriseo/server/`)
+
+- `anniversary/AnniversaryCalculatorTest`(Spring 없음): FR-ANNIV-02 AC1·AC2, FR-ANNIV-03 AC1·AC3, FR-ANNIV-04 AC1, R-15 (12개)
+- `anniversary/AnniversaryQueryTest`: FR-ANNIV-02 AC3, FR-ANNIV-04 AC1·AC2·AC3·AC4, R-01(목록)
+- `anniversary/AnniversaryPermissionTest`: R-01(DELETE 허용·거부·해제된 공간·본문까지 같은 404), R-05(허용·거부·거부 시 불변·검사 순서), FR-ANNIV-03 AC2, FR-ANNIV-02 AC3(자동은 가리킬 ID 없음), POST 사전 잠금 블록
+- `anniversary/AnniversaryTestSupport`: 도구. `support/IntegrationTestSupport`: `insertAnniversary`에 날짜·반복 여부 인자, `deleteAnniversary`
+- `couple/CoupleJoinTest`: `FR-COUPLE-03 AC1 기념일만 있는 개인 공간도 기록이 있는 공간으로 본다`. 이월분(`CoupleImportTest`, `SpaceLinkedAtTest`)은 기존 테스트가 그대로 덮는다
+
+### 1부에서 정한 것 (문서에 없는 구현 선택)
+
+- **`POST /anniversaries` 사전 잠금은 필요하다. 다만 일정 방식 그대로가 아니라 더 단순하다.** `EventService.create`는 상대의 `PARTNER_CREATED` 행 때문에 상대 사용자 행도 잡아야 해서, 상대를 잠금 없이 먼저 읽고 잠근 뒤 바뀌었는지 보는 `PartnerLockRetry` 재시도가 들어 있다. 기념일은 상대 알림이 없어 요청자 사용자 행 하나만 `lockShare`한 뒤 활성 공간을 읽으면 된다(READ COMMITTED에서 잠금을 얻은 뒤 읽은 값이 최신). 그래서 `PartnerLockRetry`는 쓰지 않는다. `AnniversaryService.inLockedActiveSpace`가 이것을 하고 POST가 들어올 때 부른다. 동시성 테스트(`R-01 기념일을 만드는 요청과 커플 연결이 동시에 와도 …`)는 POST와 함께 만든다
+- `PATCH`·`DELETE`는 기념일 행 `FOR UPDATE`(`AnniversaryLocker`) 후 R-01·R-05를 다시 확인한다. 사용자 행 사전 잠금은 하지 않는다 (위 5장 판단 그대로)
+- `DELETE`는 `AnniversaryDeleted`를 같은 트랜잭션에서 발행한다. 듣는 쪽은 단위 6. 이벤트가 커밋 뒤에만 전달되는지 보는 테스트는 `Created`/`Updated`와 함께 POST·PATCH 때 더한다 (기념일용 기록 도구가 아직 없다)
+- `upcoming` 정렬: 날짜 → 자동 먼저 → 자동은 일수 먼저·횟수 → 직접은 ID 문자열. `past` 정렬: 날짜 내림차순 → ID 내림차순. 이 같은 날 순서와 커서 모양은 확인 필요 3·4가 정하면 바꾼다
+- 자동 기념일 N주년은 `LocalDate.plusYears`를 쓴다(2월 29일 시작이면 비윤년 2월 28일). 확인 필요 3의 추천안과 같지만 Docs에 올라가기 전이다. 바꿀 곳은 `AnniversaryCalculator.yearsLater` 한 곳
+
+### v0.10 반영 대기 (자리만 두고 구현하지 않은 것)
+
+| 확인 필요 | 비어 있는 곳 | 코드의 자리 |
+| --- | --- | --- |
+| 1 | `POST`·`PATCH`의 요청 필드·기본값·검사 순서, 응답 `Anniversary`, 이름 trim | `AnniversaryService`(`inLockedActiveSpace`를 쓸 `create`·`update`), `AnniversaryController`(`POST`·`PATCH` 경로), `Anniversary` 엔티티는 이미 있음. `AnniversaryCreated`/`Updated` 이벤트는 만들지 않았다 |
+| 2 | 캘린더용 `GET /anniversaries?from=&to=` 항목 모양·오류 규칙 | 경로 없음. 계산은 `AnniversaryCalculator.autoAnniversariesBetween`·`customOccurrencesBetween`이 이미 범위 인자를 받는다 |
+| 3 | 자동 기념일 `name` 문자열, 2월 29일 주년, 같은 날 겹침 정렬·커서 | `UpcomingAnniversary.name`이 자동은 null, `AnniversaryCalculator.yearsLater` |
+| 4 | `cursor`·`size` 규칙, 잘못된 커서 응답 | `upcoming`·`past` 경로 없음. `AnniversaryQueryService`는 전체 목록을 돌려준다 |
+| 5 | R-05 경로의 R-01 순서(DELETE는 R-01 → R-05로 구현) | — |
+
 ## 결정
 
-구현하면서 정한 것 중 문서에 없는 것. 문서에 있어야 할 결정이면 여기 적지 말고 작업을 멈추고 보고한다. (승인 전 계획)
+구현하면서 정한 것 중 문서에 없는 것. 문서에 있어야 할 결정이면 여기 적지 말고 작업을 멈추고 보고한다. (승인 전 계획. 1부에서 정한 것은 위 "구현 1부")
 
 - 패키지: `anniversary/api`(컨트롤러, DTO), `anniversary/application`(`AnniversaryService`, `AnniversaryQueryService`, `AnniversaryCalculator`, `AnniversaryContentService`, 도메인 이벤트), `anniversary/domain`(`Anniversary`, `AnniversaryRepository`).
 - 요청 본문은 단위 2·3과 같이 `@RequestBody Map`으로 받아 "필드 없음"과 `null`을 구분한다. `SpaceAccessPolicy`에는 `requireAnniversaryAuthor(authorId)`(R-05)만 더한다. R-01은 기존 `requireInActiveSpace`.

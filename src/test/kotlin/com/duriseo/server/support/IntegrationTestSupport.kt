@@ -463,14 +463,25 @@ abstract class IntegrationTestSupport {
 		return id
 	}
 
-	protected fun insertAnniversary(spaceId: UUID, authorId: UUID, name: String = "테스트 기념일"): UUID {
+	/** 직접 기념일 한 행 (`YYYY-MM-DD`인 [date], 매년 반복 여부). 날짜 범위(R-15)는 DB가 검사하지 않으므로 범위 밖 값도 넣을 수 있다 */
+	protected fun insertAnniversary(
+		spaceId: UUID,
+		authorId: UUID,
+		name: String = "테스트 기념일",
+		date: String = "2026-10-27",
+		repeatsYearly: Boolean = true,
+	): UUID {
 		val id = UUID.randomUUID()
 		jdbc.update(
-			"insert into anniversaries (id, space_id, author_id, name, date, created_at, updated_at) values (?, ?, ?, ?, date '2026-10-27', ?, ?)",
-			id, spaceId, authorId, name, ts(clock.instant()), ts(clock.instant()),
+			"insert into anniversaries (id, space_id, author_id, name, date, repeats_yearly, created_at, updated_at) " +
+				"values (?, ?, ?, ?, cast(? as date), ?, ?, ?)",
+			id, spaceId, authorId, name, date, repeatsYearly, ts(clock.instant()), ts(clock.instant()),
 		)
 		return id
 	}
+
+	protected fun deleteAnniversary(accessToken: String, id: Any): ResultActions =
+		mockMvc.perform(delete("$API/anniversaries/$id").header("Authorization", "Bearer $accessToken"))
 
 	/** 사용자의 활성 공간 ID (`left_at`이 없는 소속의 공간) */
 	protected fun activeSpaceIdOfUser(userId: UUID): UUID =
