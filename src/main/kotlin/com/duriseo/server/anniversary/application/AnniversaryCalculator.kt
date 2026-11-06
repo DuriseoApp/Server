@@ -7,9 +7,15 @@ enum class AutoAnniversaryType { DAYS, YEARS }
 
 /**
  * 자동 기념일 하나 (FR-ANNIV-02). [count]는 일수(100~1000) 또는 주년 수다. 저장하지 않고 계산한다 (DB-01).
- * 화면에 보일 이름 문자열("100일", "1주년" 등)은 아직 API.md에 없다 (PRD v0.10 반영 대기, unit-4.md 확인 필요 3).
+ * [name]은 일수가 "100일" ~ "1000일", 주년이 "1주년", "2주년" …이다 (FR-ANNIV-02 AC4, D-105).
+ * [rank]는 같은 날 순서의 순번이다: 일수 0, 주년 1 (D-106). 직접 기념일은 2다 (API.md 3.3 "커서 정렬 키").
  */
-data class AutoAnniversary(val type: AutoAnniversaryType, val count: Int, val date: LocalDate)
+data class AutoAnniversary(val type: AutoAnniversaryType, val count: Int, val date: LocalDate) {
+
+	val name: String get() = if (type == AutoAnniversaryType.DAYS) "${count}일" else "${count}주년"
+
+	val rank: Int get() = type.ordinal
+}
 
 /**
  * 기념일의 발생일 계산 (FR-ANNIV-02·03, 시간대와 무관한 날짜 계산만 한다). 오늘 판단은 부른 쪽이 요청자 시간대로 한다.
@@ -20,8 +26,7 @@ data class AutoAnniversary(val type: AutoAnniversaryType, val count: Int, val da
  *   2월 29일은 윤년이 아닌 해에 2월 28일이다 (AC3).
  * - 날짜 범위는 1950-01-01 ~ 2050-12-31이다 (D-74, R-15). 이 범위 밖 발생일은 만들지 않는다.
  *
- * 처음 만난 날이 2월 29일일 때 비윤년 주년 날짜와 같은 날 자동 기념일의 정렬은 아직 문서에 없다(PRD v0.10 반영 대기, 확인 필요 3).
- * 지금은 직접 기념일과 같은 규칙(2월 28일)을 쓴다. [yearsLater] 한 곳만 보면 된다.
+ * 처음 만난 날이 2월 29일이고 그 해가 윤년이 아니면 N주년은 2월 28일이다 (FR-ANNIV-02 AC5, D-106). [yearsLater] 한 곳이다.
  */
 object AnniversaryCalculator {
 

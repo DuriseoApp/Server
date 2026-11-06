@@ -31,10 +31,37 @@ interface AnniversaryRepository : JpaRepository<Anniversary, UUID> {
 	/** 공간의 직접 기념일 전체 (목록의 발생일 계산용. 공간당 수가 작다) */
 	fun findAllBySpaceId(spaceId: UUID): List<Anniversary>
 
-	/** "지난 기념일" (FR-ANNIV-04 AC3, D-71): `repeats_yearly = false`이고 `date`가 [today]보다 앞인 직접 기념일. 날짜 최근 순, 같은 날이면 ID 내림차순 */
+	/**
+	 * "지난 기념일" 첫 페이지 (FR-ANNIV-04 AC3, D-71): `repeats_yearly = false`이고 `date`가 [today]보다 앞인 직접 기념일.
+	 * `date` 내림차순 → `id` 내림차순, 최대 [limit]개. `id` 비교와 정렬은 PostgreSQL `uuid` 비교(부호 없는 바이트 순)다 (API.md 3.3 리드 보충)
+	 */
 	@Query(
-		"select a from Anniversary a where a.spaceId = :spaceId and a.repeatsYearly = false and a.date < :today " +
-			"order by a.date desc, a.id desc",
+		"select a.* from anniversaries a where a.space_id = :spaceId and a.repeats_yearly = false and a.date < :today " +
+			"order by a.date desc, a.id desc limit :limit",
+		nativeQuery = true,
 	)
-	fun findPast(@Param("spaceId") spaceId: UUID, @Param("today") today: LocalDate): List<Anniversary>
+	fun findPastFirstPage(
+		@Param("spaceId") spaceId: UUID,
+		@Param("today") today: LocalDate,
+		@Param("limit") limit: Int,
+	): List<Anniversary>
+
+	/** "지난 기념일"의 커서 다음 페이지: (`date`, `id`)가 커서보다 **작은** 것 (내림차순 방향, API.md 3.3 "커서 정렬 키") */
+	@Query(
+		"select a.* from anniversaries a where a.space_id = :spaceId and a.repeats_yearly = false and a.date < :today " +
+			"and (a.date < :cursorDate or (a.date = :cursorDate and a.id < :cursorId)) " +
+			"order by a.date desc, a.id desc limit :limit",
+		nativeQuery = true,
+	)
+	fun findPastAfter(
+		@Param("spaceId") spaceId: UUID,
+		@Param("today") today: LocalDate,
+		@Param("cursorDate") cursorDate: LocalDate,
+		@Param("cursorId") cursorId: UUID,
+		@Param("limit") limit: Int,
+	): List<Anniversary>
+
+	/** "지난 기념일" 전체 개수 (`totalCount`, 페이지와 관계없음, D-71) */
+	@Query("select count(a) from Anniversary a where a.spaceId = :spaceId and a.repeatsYearly = false and a.date < :today")
+	fun countPast(@Param("spaceId") spaceId: UUID, @Param("today") today: LocalDate): Long
 }
