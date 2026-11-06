@@ -2,6 +2,9 @@ package com.duriseo.server.anniversary
 
 import com.duriseo.server.support.IntegrationTestSupport
 import com.duriseo.server.support.Tokens
+import com.jayway.jsonpath.JsonPath
+import org.springframework.test.web.servlet.ResultActions
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import java.util.UUID
 
 /**
@@ -33,4 +36,25 @@ abstract class AnniversaryTestSupport : IntegrationTestSupport() {
 	protected fun anniversarySnapshot(): String = jdbc.queryForList("select * from anniversaries order by id").toString()
 
 	protected fun anniversaryCount(): Int = count("select count(*) from anniversaries")
+
+	/** 직접 기념일 본문. [extra]는 `,"repeatsYearly":false`처럼 `,`로 시작하는 추가 필드 */
+	protected fun anniversaryJson(name: String = "100일 여행", date: String = "2026-11-03", extra: String = ""): String =
+		"""{"name":"$name","date":"$date"$extra}"""
+
+	protected fun expectField(result: ResultActions, index: Int, field: String, reason: String): ResultActions =
+		result
+			.andExpect(jsonPath("$.details.fields[$index].field").value(field))
+			.andExpect(jsonPath("$.details.fields[$index].reason").value(reason))
+
+	/** 오류 응답 `details.fields`의 `field` 이름들 */
+	protected fun fieldNamesOf(result: ResultActions): List<String> =
+		JsonPath.read(bodyOf(result), "$.details.fields[*].field")
+
+	/** 응답 본문의 `items` 한 필드를 순서대로 모은다 */
+	protected fun itemsOf(result: ResultActions, field: String): List<Any?> =
+		JsonPath.read<List<Map<String, Any?>>>(bodyOf(result), "$.items").map { it[field] }
+
+	/** 데이터베이스의 기념일 한 행 */
+	protected fun anniversaryRow(id: UUID): Map<String, Any?> =
+		jdbc.queryForMap("select name, date::text as date, repeats_yearly, author_id, space_id, updated_at from anniversaries where id = ?", id)
 }

@@ -17,7 +17,7 @@ import kotlin.test.assertTrue
 
 /**
  * 기념일 목록 계산 (FR-ANNIV-02·04, D-71, D-75, R-01)을 서비스로 확인한다.
- * `GET /anniversaries/upcoming`·`/past` 경로와 커서·`size`는 PRD v0.10 반영 뒤에 더하므로 지금은 전체 목록을 돌려주는 서비스를 직접 부른다.
+ * 경로·커서·`size`는 `AnniversaryListTest`가 HTTP로 확인하고, 여기서는 페이지 없는 전체 목록(`upcoming(userId)`)과 `past`의 첫 페이지를 직접 부른다.
  * 시각은 `MutableClock`이 `2026-10-26T00:00:00Z`로 고정한다: 서울(기본) 사용자의 오늘은 2026-10-26이다.
  */
 @SpringBootTest

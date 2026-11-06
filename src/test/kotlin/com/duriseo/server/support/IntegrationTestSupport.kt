@@ -79,6 +79,9 @@ abstract class IntegrationTestSupport {
 	protected lateinit var eventChanges: EventChangeRecorder
 
 	@Autowired
+	protected lateinit var anniversaryChanges: AnniversaryChangeRecorder
+
+	@Autowired
 	private lateinit var context: WebApplicationContext
 
 	protected lateinit var mockMvc: MockMvc
@@ -93,6 +96,7 @@ abstract class IntegrationTestSupport {
 		inviteCodeGenerator.reset()
 		coupleEvents.reset()
 		eventChanges.reset()
+		anniversaryChanges.reset()
 		mockMvc = MockMvcBuilders.webAppContextSetup(context).build()
 	}
 
@@ -470,8 +474,8 @@ abstract class IntegrationTestSupport {
 		name: String = "테스트 기념일",
 		date: String = "2026-10-27",
 		repeatsYearly: Boolean = true,
+		id: UUID = UUID.randomUUID(),
 	): UUID {
-		val id = UUID.randomUUID()
 		jdbc.update(
 			"insert into anniversaries (id, space_id, author_id, name, date, repeats_yearly, created_at, updated_at) " +
 				"values (?, ?, ?, ?, cast(? as date), ?, ?, ?)",
@@ -482,6 +486,39 @@ abstract class IntegrationTestSupport {
 
 	protected fun deleteAnniversary(accessToken: String, id: Any): ResultActions =
 		mockMvc.perform(delete("$API/anniversaries/$id").header("Authorization", "Bearer $accessToken"))
+
+	/** `POST /anniversaries` 본문을 그대로 보낸다. [json]이 null이면 본문 없이 보낸다 */
+	protected fun postAnniversaryRaw(accessToken: String, json: String?): ResultActions {
+		val request = post("$API/anniversaries").header("Authorization", "Bearer $accessToken")
+		return mockMvc.perform(if (json == null) request else request.contentType(MediaType.APPLICATION_JSON).content(json))
+	}
+
+	protected fun patchAnniversary(accessToken: String, id: Any, json: String): ResultActions =
+		mockMvc.perform(
+			patch("$API/anniversaries/$id").header("Authorization", "Bearer $accessToken").contentType(MediaType.APPLICATION_JSON).content(json),
+		)
+
+	/** `POST /anniversaries`가 201로 끝난 것을 확인하고 기념일 ID를 돌려준다 */
+	protected fun createAnniversary(accessToken: String, json: String): UUID {
+		val body = bodyOf(postAnniversaryRaw(accessToken, json).andExpect(status().isCreated))
+		return UUID.fromString(JsonPath.read<String>(body, "$.id"))
+	}
+
+	/** `GET /anniversaries`(캘린더용). [from]·[to]가 null이면 그 쿼리 파라미터를 보내지 않는다 */
+	protected fun getAnniversaries(accessToken: String, from: String?, to: String?): ResultActions {
+		val request = get("$API/anniversaries").header("Authorization", "Bearer $accessToken")
+		if (from != null) request.param("from", from)
+		if (to != null) request.param("to", to)
+		return mockMvc.perform(request)
+	}
+
+	/** `GET /anniversaries/upcoming`·`/past`. [cursor]·[size]가 null이면 그 쿼리 파라미터를 보내지 않는다 */
+	protected fun getAnniversaryList(accessToken: String, path: String, cursor: String? = null, size: String? = null): ResultActions {
+		val request = get("$API/anniversaries/$path").header("Authorization", "Bearer $accessToken")
+		if (cursor != null) request.param("cursor", cursor)
+		if (size != null) request.param("size", size)
+		return mockMvc.perform(request)
+	}
 
 	/** 사용자의 활성 공간 ID (`left_at`이 없는 소속의 공간) */
 	protected fun activeSpaceIdOfUser(userId: UUID): UUID =

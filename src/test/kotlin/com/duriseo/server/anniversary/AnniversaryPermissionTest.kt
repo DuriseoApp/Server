@@ -15,7 +15,7 @@ import kotlin.test.assertEquals
 
 /**
  * 직접 기념일 권한 규칙 R-01·R-05를 `DELETE /anniversaries/{id}`로 확인한다 (FR-ANNIV-03 AC2, NFR-SEC-02).
- * 규칙마다 허용·거부 테스트를 둔다. `PATCH`·`POST`와 `GET` 경로의 R-01·R-05·R-15는 PRD v0.10 반영 뒤 같은 클래스에 더한다.
+ * 규칙마다 허용·거부 테스트를 둔다. `POST`·`PATCH`의 R-01·R-05·R-15는 `AnniversaryWriteTest`, `GET` 경로의 R-01·R-15는 `AnniversaryListTest`가 확인한다.
  */
 @SpringBootTest
 @Import(TestcontainersConfig::class, TestClockConfig::class)
