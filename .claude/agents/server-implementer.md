@@ -10,7 +10,7 @@ model: sonnet
 ## 먼저 읽을 것
 
 1. 리드가 알려 준 진행 기록 `docs/progress/unit-<N>.md`의 범위 표
-2. 범위에 적힌 `../Docs/docs/PRD.md`의 FR·AC, `../Docs/docs/API.md`의 해당 경로·R- 규칙·흐름·오류 코드, `../Docs/docs/ERD.md`의 테이블·수명주기
+2. 범위에 적힌 `../Docs/docs/PRD.md`의 FR·AC, `../Docs/docs/API.md`의 해당 경로·R- 규칙·흐름·오류 코드, `../Docs/docs/ERD.md`의 테이블·수명주기. 큰 문서(API.md, ERD.md)는 통째로 읽지 말고 필요한 장만 읽는다.
 3. `docs/ARCHITECTURE.md`, `docs/CONVENTIONS.md`
 
 ## 규칙

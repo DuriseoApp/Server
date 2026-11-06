@@ -9,7 +9,8 @@
 
 ## DTO와 검증
 
-- 입력 길이·필수값은 DTO에 Bean Validation으로 건다 (`@field:NotBlank`, `@field:Size(max = 10)`). 한도는 PRD NFR-LIMIT-01을 따른다.
+- 필드 없음과 `null`을 구분할 필요가 없는 요청(로그인, refresh, 기기 등록)은 DTO에 Bean Validation을 건다 (`@field:NotBlank`, `@Valid`). 한도는 PRD NFR-LIMIT-01을 따른다.
+- 부분 수정(`PATCH`)이나, 권한 검사(403·404)가 값 검사(400)보다 먼저 나가야 하는 요청은 `@RequestBody Map<String, Any?>`로 받아 "필드 없음"과 `null`을 구분하고, 값 검사는 `*WriteRules` 같은 클래스에서 틀린 필드를 모두 모아 `VALIDATION_FAILED`로 던진다 (일정·기념일·공간·`PATCH /me`).
 - 날짜 범위(1950-01-01 ~ 2050-12-31)처럼 API.md가 별도 오류 코드를 정한 검사는 서비스에서 하고 해당 코드로 던진다 (`DATE_OUT_OF_RANGE`).
 - 목록 응답은 `ListResponse`·`PageResponse`·`CountedPageResponse`만 쓴다. 배열을 그대로 돌려주지 않는다.
 - 돌려줄 내용이 없는 성공은 `ResponseEntity.noContent()` (204).
@@ -20,6 +21,8 @@
 - PRD의 AC 하나에 테스트 하나 이상. API.md의 R- 규칙 하나에 허용·거부 테스트 둘 이상.
 - DB가 필요한 테스트는 `TestcontainersConfig`를 `@Import` 한다. H2 같은 다른 DB로 대신하지 않는다 (PostgreSQL 전용 기능을 쓴다).
 - 시간이 걸리는 테스트는 `Clock`을 고정해서 쓴다.
+- 테스트 함수 이름에는 `/`를 쓸 수 없다(JVM 메서드 이름). 경로는 `POST invite-codes`, `PATCH me`처럼 `/` 없이 적는다.
+- 동시에 오는 요청(잠금 순서, 연결 해제와 겹친 쓰기)은 스레드 둘로 실제 PostgreSQL에서 확인한다.
 
 ## 마이그레이션
 
@@ -33,4 +36,5 @@
 
 - 커밋 메시지: `feat(auth): 게스트 시작 (FR-AUTH-01)`처럼 `type(도메인): 내용 (ID)`. type은 feat, fix, chore, test, docs, refactor.
 - PR 하나는 작업 단위 하나(`docs/PLAN.md`). PR 본문에 다룬 FR·R ID, 테스트 목록, 문서와 다르게 한 점(없어야 정상), 남은 일을 적는다.
-- 리뷰 에이전트(`server-reviewer`)가 Critical 0이라고 할 때까지 고친 뒤 사람에게 넘긴다.
+- 리뷰 에이전트(`server-reviewer`)가 지적한 Critical은 모두 고치고 Major는 고쳐서 확인한 뒤 사람에게 넘긴다 (리뷰 횟수와 모델은 `dev-unit` 스킬 4장).
+- 진행 기록은 `docs/progress/unit-<N>.md`에 쓰고, 그 단위 PR이 머지된 뒤 다음 단위를 시작할 때 `docs/progress/archive/`로 옮긴다.
