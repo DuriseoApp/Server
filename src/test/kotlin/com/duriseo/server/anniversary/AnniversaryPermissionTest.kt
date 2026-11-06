@@ -156,7 +156,7 @@ class AnniversaryPermissionTest : AnniversaryTestSupport() {
 	// ── POST 사전 잠금 ───────────────────────────────────
 
 	@Test
-	fun `R-01 POST 쓰기 블록은 사용자 행을 잠근 뒤의 활성 공간을 받는다`() {
+	fun `R-01 POST 쓰기 블록은 호출 시점의 활성 공간 ID를 받고 커플 연결 뒤에는 커플 공간을 받는다`() {
 		val me = startMember("에이")
 		val personal = activeSpaceIdOfUser(me.userId)
 

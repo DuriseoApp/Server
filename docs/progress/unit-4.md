@@ -301,6 +301,7 @@ JVM 메서드 이름에 `/`를 못 쓰므로 경로는 `GET anniversaries`처럼
 
 | 회차 | Critical | Major | 비고 |
 | --- | --- | --- | --- |
+| 1회차 Sonnet | 0 | 1 | Critical 0, Major 1, Minor 5 → Major·Minor 1·2·5 수정 |
 
 ## 남은 일
 

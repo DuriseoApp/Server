@@ -427,7 +427,55 @@ class AnniversaryWriteTest : AnniversaryTestSupport() {
 		assertEquals(couple.a.userId, deleted.deletedByUserId)
 	}
 
+
+	// ── FR-ANNIV-03 AC3: 2월 29일 매년 반복 ───────────────
+
+	@Test
+	fun `FR-ANNIV-03 AC3 2월 29일 매년 반복 기념일은 비윤년에 2월 28일 윤년에 2월 29일로 나온다`() {
+		val me = startMember()
+		createAnniversary(me.accessToken, anniversaryJson(name = "윤일", date = "2024-02-29", extra = ""","repeatsYearly":true"""))
+
+		val nonLeap = getAnniversaries(me.accessToken, "2027-02-01", "2027-03-01").andExpect(status().isOk)
+		val leap = getAnniversaries(me.accessToken, "2028-02-01", "2028-03-01").andExpect(status().isOk)
+
+		assertEquals(listOf("2027-02-28"), itemsOf(nonLeap, "date"))
+		assertEquals(listOf("윤일"), itemsOf(nonLeap, "name"))
+		assertEquals(listOf("2028-02-29"), itemsOf(leap, "date"))
+		// 등록한 해(2024)보다 앞의 해에는 없다
+		assertEquals(emptyList(), itemsOf(getAnniversaries(me.accessToken, "2023-02-01", "2023-03-01"), "date"))
+	}
+
+	@Test
+	fun `FR-ANNIV-03 AC3 upcoming에서도 2월 29일 반복 기념일은 윤년에만 2월 29일이다`() {
+		val me = startMember()
+		createAnniversary(me.accessToken, anniversaryJson(name = "윤일", date = "2024-02-29"))
+
+		val dates = itemsOf(getAnniversaryList(me.accessToken, "upcoming", size = "100"), "date")
+
+		val leapYears = setOf(2028, 2032, 2036, 2040, 2044, 2048)
+		assertEquals((2027..2050).map { if (it in leapYears) "$it-02-29" else "$it-02-28" }, dates)
+	}
+
 	// ── 동시성 ──────────────────────────────────────────
+
+	@Test
+	fun `FR-ANNIV-03 같은 기념일의 PATCH와 DELETE가 동시에 와도 500 없이 200 204 또는 404 204만 나온다`() {
+		repeat(5) {
+			val couple = newCouple()
+			val id = createAnniversary(couple.a.accessToken, anniversaryJson(name = "동시"))
+
+			val (patch, delete) = inParallel(
+				listOf(
+					{ statusOf(patchAnniversary(couple.a.accessToken, id, """{"name":"고침"}""")) },
+					{ statusOf(deleteAnniversary(couple.a.accessToken, id)) },
+				),
+			)
+
+			assertEquals(204, delete)
+			assertTrue(patch == 200 || patch == 404, "patch=$patch")
+			assertEquals(0, count("select count(*) from anniversaries where id = ?", id))
+		}
+	}
 
 	@Test
 	fun `R-01 기념일을 만드는 요청과 커플 연결이 동시에 와도 기념일이 사라지거나 500이 나지 않는다`() {

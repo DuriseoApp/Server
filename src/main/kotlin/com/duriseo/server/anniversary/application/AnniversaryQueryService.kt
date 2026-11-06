@@ -119,7 +119,8 @@ class AnniversaryQueryService(
 	@Transactional(readOnly = true)
 	fun past(requesterId: UUID, rawCursor: String? = null, rawSize: String? = null): PastPage {
 		val query = AnniversaryCursor.parsePast(rawCursor, rawSize)
-		val spaceId = checkNotNull(policy.activeSpaceIdOf(requesterId)) { "user has no active space" }
+		// 활성 공간이 없는 사용자는 `todayOf`의 사용자 없음과 같이 401 SESSION_INVALID로 처리한다 (500이 나지 않게)
+		val spaceId = policy.activeSpaceIdOf(requesterId) ?: throw ApiException(ErrorCode.SESSION_INVALID, "user has no active space")
 		val today = todayOf(requesterId)
 		val limit = query.size + 1
 		val cursor = query.cursor
