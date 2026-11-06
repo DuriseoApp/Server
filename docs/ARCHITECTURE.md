@@ -8,7 +8,7 @@
 
 ```
 com.duriseo.server
-├── common/          모든 도메인이 쓰는 것 (응답 형식, 오류, 웹 설정, 시간, 권한 정책)
+├── common/          모든 도메인이 쓰는 것 (응답 형식, 오류, 웹 설정, 시간 `UserZones`, 권한 정책, UUIDv7·정렬)
 ├── config/          외부 서비스 설정값 (DuriseoProperties)
 ├── auth/            로그인 3종, 토큰, 세션 (FR-AUTH)
 ├── user/            내 정보, 프로필, 탈퇴
@@ -17,10 +17,10 @@ com.duriseo.server
 ├── event/           일정, 일정 알림
 ├── anniversary/     직접 기념일, 자동 기념일 계산
 ├── memo/            메모, 고정, 즐겨찾기
-├── notification/    알림 목록, 알림 설정, 푸시 발송
-├── push/            FCM, 동기화 신호 (SYNC)
-├── storage/         프로필 사진 저장소 (로컬 / S3)
-└── job/             정리 작업, 알림 스케줄러
+├── notification/    알림 행 만들기·삭제 (목록·읽음·설정 API는 단위 6)
+├── push/            FCM, 동기화 신호 (SYNC) — 단위 6에서 만든다
+├── storage/         프로필 사진 저장소 (로컬 / S3) — 단위 7에서 만든다
+└── job/             정리 작업, 알림 스케줄러 — 단위 6에서 만든다
 ```
 
 도메인 패키지 안은 이렇게 나눈다. 작은 도메인은 필요한 것만 만든다.
@@ -36,12 +36,14 @@ com.duriseo.server
 
 - `api` → `application` → `domain`. 거꾸로 의존하지 않는다.
 - 다른 도메인은 그 도메인의 `application` 서비스로만 부른다. 다른 도메인의 리포지토리를 직접 쓰지 않는다.
+- `event`·`anniversary`는 `couple`을 알지 않는다. `couple`이 이들의 `*ContentService`를 불러 기록 확인·가져오기·일정 알림 삭제를 한다. `user`는 `couple`·`notification`·`auth`의 서비스를 부른다 (탈퇴).
+- **임시 예외:** `couple.CoupleContentGateway`가 아직 `memos` 테이블을 네이티브 SQL로 읽고 옮기고, `user.WithdrawalDataEraser`가 `memo_favorites`를 직접 지운다. 단위 5가 메모 서비스로 옮기면 게이트웨이를 없앤다 (`docs/PLAN.md`).
 - 엔티티를 API 응답으로 그대로 내보내지 않는다. 항상 응답 DTO로 바꾼다.
 - `common`은 어떤 도메인에도 의존하지 않는다.
 
 ## 3. 권한 검사 (가장 중요)
 
-- API.md 2장의 R- 규칙은 `common` 아래 `SpaceAccessPolicy`(계정 단위에서 만든다) 한 곳에서 구현한다. 서비스는 이 정책을 부르고, 각 규칙마다 허용·거부 테스트를 둔다.
+- API.md 2장의 R- 규칙은 `common/access/SpaceAccessPolicy` 한 곳에서 구현한다. `common`이 도메인을 모르도록 엔티티·리포지토리 대신 `EntityManager` 네이티브 쿼리로 읽고, 일정·기념일 규칙은 엔티티가 아니라 값(`authorId` 등)을 받는다. 서비스는 이 정책을 부르고, 각 규칙마다 허용·거부 테스트를 둔다.
 - 요청자의 활성 공간이 아닌 리소스는 존재해도 404 `NOT_FOUND` (ERD DB-05).
 - 앱의 버튼 숨김에 기대지 않는다. 모든 변경 API는 서버에서 작성자·구성원을 확인한다 (NFR-SEC-02).
 
@@ -50,7 +52,12 @@ com.duriseo.server
 - 여러 테이블을 바꾸는 흐름(API.md 4장)은 서비스 메서드 하나의 트랜잭션에서 처리한다.
 - 두 사람이 동시에 움직일 수 있는 흐름(커플 연결, 초대코드)은 행 잠금(`SELECT … FOR UPDATE`)으로 순서를 보장한다.
 - **잠금 순서는 모든 흐름에서 같다: users(UUID 오름차순) → invite_codes → spaces.** 공간 행을 잡은 채 사용자 행을 잠그는 흐름을 두지 않는다. 사용자 행을 `PESSIMISTIC_WRITE`(PostgreSQL에서는 `FOR NO KEY UPDATE`)로 잡는 해제·탈퇴, 사용자 행을 `FOR SHARE`로 먼저 잡는 일정 쓰기가 모두 같은 순서를 지켜야 서로 반대로 기다리지 않는다. 외래 키 검사는 참조되는 행에 `FOR KEY SHARE`를 잡는데, 이는 `FOR NO KEY UPDATE`와 충돌하지 않지만 `FOR UPDATE`와는 충돌하므로 순서를 어긴 흐름이 `FOR UPDATE`를 쓰게 되는 때를 대비한다. 연결 해제와 탈퇴는 본인과 상대 사용자 행을 UUID 순서로 먼저 잠그고 공간 행을 잠근다 (`UserService.lockForUpdateWithPartner`). 같은 이유로 `invite_code_attempts` 같은 외래 키 행을 `REQUIRES_NEW`로 넣지 않는다 (바깥 트랜잭션이 잡은 사용자 행을 기다리는 자기 교착).
-- **일정 쓰기(단위 3)는 공간 행을 잠그지 않는다.** 수정·삭제와 일정 알림 설정은 그 일정 행만 `FOR UPDATE`로 잠근다(`EventLocker`). 일정을 만들 때는 행을 넣기 전에 요청자와 커플 상대의 사용자 행을 UUID 순서로 `FOR SHARE`로 먼저 잡는다(`UserService.lockShare`). 이 사전 잠금이 하는 일은 "해제·탈퇴와 한 줄로 세우기"다: `FOR SHARE`는 해제·탈퇴의 `FOR NO KEY UPDATE`와 충돌해 그 트랜잭션이 끝나기를 기다리고, 사용자 행을 공간 행보다 먼저 잡는 순서도 지킨다. 잡은 뒤 활성 공간·상대를 다시 읽어 바뀌었으면(그 사이 연결 해제가 커밋됨) `PartnerLockRetry`로 롤백하고 다시 한다. 일정 알림 설정(`PUT`·`DELETE /events/{id}/reminder`)은 R-01 전에 요청자 행을 `FOR SHARE`로 잡아 해제 정리 뒤에 알림 행이 남지 않게 한다. 사용자 행의 순서는 PostgreSQL `uuid` 비교(부호 없는 바이트 순)와 같게 `sortedAsPostgres`로 맞춘다. `FOR KEY SHARE`가 아니라 `FOR SHARE`인 이유: `FOR KEY SHARE`는 `FOR NO KEY UPDATE`와 충돌하지 않아 해제를 기다리지 않는다(CI 동시 테스트에서 발견). 알림 설정과 `PATCH /me`(시간대 재계산)는 사용자 행으로 한 줄로 선다(`PATCH /me`는 첫 줄에서 `FOR UPDATE`).
+- **일정·기념일 쓰기는 공간 행을 잠그지 않는다.** 수정·삭제와 일정 알림 설정은 그 행만 `FOR UPDATE`로 잠근다(`EventLocker`, `AnniversaryLocker`). 만들 때는 행을 넣기 전에 사용자 행을 UUID 순서로 `FOR SHARE`로 먼저 잡는다(`UserService.lockShare`). 일정은 요청자와 커플 상대, 기념일은 요청자만 잡는다.
+  - 이 사전 잠금이 하는 일은 "해제·탈퇴와 한 줄로 세우기"다. `FOR SHARE`는 해제·탈퇴의 `FOR NO KEY UPDATE`와 충돌해 그 트랜잭션이 끝나기를 기다리고, 사용자 행을 공간 행보다 먼저 잡는 순서도 지킨다. `FOR KEY SHARE`는 `FOR NO KEY UPDATE`와 충돌하지 않아 해제를 기다리지 않으므로 쓰지 않는다(CI 동시 테스트에서 발견).
+  - 일정은 잡은 뒤 활성 공간·상대를 다시 읽어 바뀌었으면(그 사이 연결 해제가 커밋됨) `PartnerLockRetry`로 롤백하고 다시 한다. `PartnerLockRetry`는 해제·탈퇴·Kakao 웹훅·일정 만들기가 쓰고, 최대 3번 다시 시도한다. 다 쓴 뒤에도 상대가 바뀌면 순서 밖에서 잠가 드물게 교착 판정 500이 날 수 있다.
+  - 일정 알림 설정(`PUT`·`DELETE /events/{id}/reminder`)은 R-01 전에 요청자 행을 `FOR SHARE`로 잡아 해제 정리 뒤에 알림 행이 남지 않게 한다. `PATCH /me`(시간대 재계산)는 첫 줄에서 사용자 행을 `FOR UPDATE`로 잡아 같은 사용자의 일정 알림 설정과 한 줄로 선다.
+  - 사용자 행의 순서는 PostgreSQL `uuid` 비교(부호 없는 바이트 순)와 같게 `sortedAsPostgres`(`common/persistence/UuidOrder.kt`)로 맞춘다.
+- **도메인 이벤트:** 쓰는 트랜잭션 안에서 발행하고(`CoupleLinked`, `CoupleUnlinked`, `SpaceUpdated`, `UserWithdrawn`, `EventCreated`·`Updated`·`Deleted`, `AnniversaryCreated`·`Updated`·`Deleted`), 듣는 쪽은 `@TransactionalEventListener(AFTER_COMMIT)`로 받는다. 지금 듣는 쪽은 Kakao 연결 끊기(`KakaoUnlinkListener`)뿐이고, 푸시·SYNC 리스너는 단위 6에서 만든다. `UserTimeZoneChanged`는 같은 트랜잭션 안에서 종일 일정 알림을 새 시간대로 다시 계산한다(`EventReminderService`).
 - 동기화 신호·푸시는 **커밋이 끝난 뒤** 보낸다 (`@TransactionalEventListener(phase = AFTER_COMMIT)`). 트랜잭션 안에서 외부 호출을 하지 않는다. 카카오 연결 끊기도 커밋 뒤에 한다.
 
 ## 5. 오류 모델
