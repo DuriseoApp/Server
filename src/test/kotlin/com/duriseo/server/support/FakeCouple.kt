@@ -1,5 +1,8 @@
 package com.duriseo.server.support
 
+import com.duriseo.server.anniversary.application.AnniversaryCreated
+import com.duriseo.server.anniversary.application.AnniversaryDeleted
+import com.duriseo.server.anniversary.application.AnniversaryUpdated
 import com.duriseo.server.couple.application.CoupleLinked
 import com.duriseo.server.couple.application.CoupleUnlinked
 import com.duriseo.server.couple.application.InviteCodeGenerator
@@ -117,6 +120,50 @@ class EventChangeRecorder {
 	}
 }
 
+/**
+ * 커밋 뒤에 전달된 `AnniversaryCreated`·`AnniversaryUpdated`·`AnniversaryDeleted`를 모은다. [onCreated]·[onUpdated]는 전달되는 순간 실행한다:
+ * 그때 다른 연결에서 커밋된 값이 보이는지로 "커밋 뒤에만 전달된다"를 확인한다. 롤백된 트랜잭션의 이벤트는 오지 않는다.
+ */
+class AnniversaryChangeRecorder {
+
+	val created = CopyOnWriteArrayList<AnniversaryCreated>()
+
+	val updated = CopyOnWriteArrayList<AnniversaryUpdated>()
+
+	val deleted = CopyOnWriteArrayList<AnniversaryDeleted>()
+
+	@Volatile
+	var onCreated: ((AnniversaryCreated) -> Unit)? = null
+
+	@Volatile
+	var onUpdated: ((AnniversaryUpdated) -> Unit)? = null
+
+	fun reset() {
+		created.clear()
+		updated.clear()
+		deleted.clear()
+		onCreated = null
+		onUpdated = null
+	}
+
+	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+	fun record(event: AnniversaryCreated) {
+		onCreated?.invoke(event)
+		created.add(event)
+	}
+
+	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+	fun record(event: AnniversaryUpdated) {
+		onUpdated?.invoke(event)
+		updated.add(event)
+	}
+
+	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+	fun record(event: AnniversaryDeleted) {
+		deleted.add(event)
+	}
+}
+
 /** 커플 통합 테스트가 쓰는 가짜들. `TestClockConfig`가 함께 가져와 컨텍스트가 하나로 공유된다 */
 @TestConfiguration(proxyBeanMethods = false)
 class TestCoupleConfig {
@@ -130,4 +177,7 @@ class TestCoupleConfig {
 
 	@Bean
 	fun eventChangeRecorder() = EventChangeRecorder()
+
+	@Bean
+	fun anniversaryChangeRecorder() = AnniversaryChangeRecorder()
 }

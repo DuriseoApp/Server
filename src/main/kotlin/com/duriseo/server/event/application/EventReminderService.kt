@@ -5,6 +5,7 @@ import com.duriseo.server.common.api.ErrorCode
 import com.duriseo.server.common.api.FieldError
 import com.duriseo.server.common.api.FieldErrorDetails
 import com.duriseo.server.common.api.FieldErrorReason
+import com.duriseo.server.common.time.UserZones
 import com.duriseo.server.common.time.nowInSeconds
 import com.duriseo.server.event.domain.Event
 import com.duriseo.server.event.domain.EventReminder
