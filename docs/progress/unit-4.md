@@ -1,8 +1,8 @@
 # 단위 4: 기념일 — 자동 기념일 계산, 직접 기념일, 목록 2종 (anniversary)
 
-> 브랜치: `feat/4-anniversary` · PR: (아직 없음) · 상태: **구현 1부 완료, CI 확인 대기** (문서로 확정된 부분만. 확인 필요 1~5는 PRD v0.10 반영 대기)
-> 기준: PRD v0.9, API.md 1장·1.1·2장(R-01·R-05·R-15)·3.3 기념일·5장·6장·7장(기념일 알림 줄), ERD 3.3(anniversaries)·4.1·4.2·4.3·4.4·5장(DB-01·05·13)
-> Docs 기준 커밋: DuriseoApp/Docs main `728ea08` (PRD v0.9). 읽은 경로는 `/home/claude/docs-main` (`../Docs` 대신)
+> 브랜치: `feat/4-anniversary` · PR: #9(초안) · 상태: **구현 2부 완료, CI 확인 대기** (확인 필요 1~5는 PRD v0.10 / API.md로 확정돼 반영함)
+> 기준: PRD v0.10 (2부), PRD v0.9 (1부), API.md 1장·1.1·2장(R-01·R-05·R-15)·3.3 기념일·5장·6장·7장(기념일 알림 줄), ERD 3.3(anniversaries)·4.1·4.2·4.3·4.4·5장(DB-01·05·13)
+> Docs 기준 커밋: DuriseoApp/Docs main `8e37acc` (PRD v0.10, 2부), `728ea08` (PRD v0.9, 1부). 읽은 경로는 `/home/claude/docs-main` (`../Docs` 대신)
 > 앞 단위: 단위 3 머지됨 (main `ebc4f71`, 개발 서버 배포)
 
 ## 요약
@@ -251,15 +251,43 @@ JVM 메서드 이름에 `/`를 못 쓰므로 경로는 `GET anniversaries`처럼
 - `upcoming` 정렬: 날짜 → 자동 먼저 → 자동은 일수 먼저·횟수 → 직접은 ID 문자열. `past` 정렬: 날짜 내림차순 → ID 내림차순. 이 같은 날 순서와 커서 모양은 확인 필요 3·4가 정하면 바꾼다
 - 자동 기념일 N주년은 `LocalDate.plusYears`를 쓴다(2월 29일 시작이면 비윤년 2월 28일). 확인 필요 3의 추천안과 같지만 Docs에 올라가기 전이다. 바꿀 곳은 `AnniversaryCalculator.yearsLater` 한 곳
 
-### v0.10 반영 대기 (자리만 두고 구현하지 않은 것)
+## 구현 2부 (PRD v0.10, API.md 3.3 기념일 그대로)
 
-| 확인 필요 | 비어 있는 곳 | 코드의 자리 |
-| --- | --- | --- |
-| 1 | `POST`·`PATCH`의 요청 필드·기본값·검사 순서, 응답 `Anniversary`, 이름 trim | `AnniversaryService`(`inLockedActiveSpace`를 쓸 `create`·`update`), `AnniversaryController`(`POST`·`PATCH` 경로), `Anniversary` 엔티티는 이미 있음. `AnniversaryCreated`/`Updated` 이벤트는 만들지 않았다 |
-| 2 | 캘린더용 `GET /anniversaries?from=&to=` 항목 모양·오류 규칙 | 경로 없음. 계산은 `AnniversaryCalculator.autoAnniversariesBetween`·`customOccurrencesBetween`이 이미 범위 인자를 받는다 |
-| 3 | 자동 기념일 `name` 문자열, 2월 29일 주년, 같은 날 겹침 정렬·커서 | `UpcomingAnniversary.name`이 자동은 null, `AnniversaryCalculator.yearsLater` |
-| 4 | `cursor`·`size` 규칙, 잘못된 커서 응답 | `upcoming`·`past` 경로 없음. `AnniversaryQueryService`는 전체 목록을 돌려준다 |
-| 5 | R-05 경로의 R-01 순서(DELETE는 R-01 → R-05로 구현) | — |
+확인 필요 1~5가 Docs에 올라가 있어 비어 있던 곳을 문서대로 채웠다. 이 환경은 Gradle·Docker가 없어 CI로만 확인한다.
+
+### 만든 것
+
+- `anniversary/api/AnniversaryController`: `GET /anniversaries`, `GET /anniversaries/upcoming`, `GET /anniversaries/past`, `POST /anniversaries`(201), `PATCH /anniversaries/{id}`(200)를 더했다 (DELETE는 1부). 쿼리·본문 검사는 서비스가 하도록 `String?`·`Map`으로 받는다
+- `anniversary/api/AnniversaryResponse`: `Anniversary`(`updatedBy` 없음), `AnniversaryOccurrence`(값이 없는 필드도 `null`), `past` 항목·`{items, nextCursor, totalCount}`
+- `anniversary/application`:
+  - `AnniversaryWriteRules`(쓰기 규칙: 이름 trim·30자·`REQUIRED`/`TOO_LONG`, 날짜 `INVALID`, `repeatsYearly` 타입, `VALIDATION_FAILED` 먼저 → `DATE_OUT_OF_RANGE`)
+  - `AnniversaryService.create`(`inLockedActiveSpace` 안에서 검사·저장, `AnniversaryCreated` 발행), `update`(`AnniversaryLocker` → R-05 → 값 검사, `AnniversaryUpdated` 발행)
+  - `AnniversaryQueryService`: `listBetween`(캘린더용, 일정 조회 규칙과 같은 검사 → 1950~2050 잘라내기), `upcomingPage`, `past`(커서·`size`·`totalCount`)
+  - `AnniversaryCursor`: `cursor`·`size` 검사(기본 20, 1~100, `size`/`cursor` `INVALID`)와 커서 인코딩
+  - `AnniversaryCreated`, `AnniversaryUpdated`, `AnniversaryView`
+- `AutoAnniversary.name`("100일"~"1000일", "1주년"…, D-105)과 `rank`(일수 0, 주년 1, 직접 2)
+- `AnniversaryRepository`: `findPast`를 `findPastFirstPage`·`findPastAfter`(네이티브, PostgreSQL `uuid` 비교)와 `countPast`로 바꿨다
+
+### 테스트 (`src/test/kotlin/com/duriseo/server/`)
+
+- `anniversary/AnniversaryWriteTest`(29개): POST(FR-ANNIV-03 AC1, D-104 이름 trim·공백만·30/31자·이모지, 필수·형식·`repeatsYearly`, R-15 경계·값 오류 우선, 모르는 필드 무시, R-01 활성 공간), PATCH(부분 수정, `null`→`REQUIRED`, R-15, 같은 값이면 무변경·이벤트 없음, R-05 403, R-01 같은 404 본문, 404→403→400 순서, 해제된 공간), 이벤트 커밋 뒤 전달(`NFR-SYNC-01` 생성·수정·삭제, 거부된 요청은 이벤트 없음), 동시성 `R-01 기념일을 만드는 요청과 커플 연결이 동시에 와도 기념일이 사라지거나 500이 나지 않는다`
+- `anniversary/AnniversaryListTest`(27개): 캘린더용(모양·`daysLeft` 음수·반복·R-01·AUTO 없음 AC2·AC4·`REQUIRED`/`INVALID`/3개월 오류·R-15 잘라내기·빈 구간), D-105 이름, FR-ANNIV-02 AC5 2월 29일, FR-ANNIV-04 AC5 같은 날 순서(부호 없는 uuid), `upcoming` 기본 20개·페이지 이어 붙이기(여러 `size`)·같은 날이 경계에 걸림·커서 항목 삭제·항목 모양, `past` 모양·빈 목록·페이지 이어 붙이기·같은 날·R-01, 잘못된 `size`·`cursor`(다른 경로의 커서 포함)
+- `support`: `AnniversaryChangeRecorder`(커밋 뒤 전달), `IntegrationTestSupport`의 기념일 요청 도구와 `insertAnniversary(id=)`
+- 1부 테스트는 `UpcomingAnniversary`→`AnniversaryOccurrence`로 이름이 바뀐 것 외에 그대로다 (`AnniversaryQueryTest`는 전체 목록 `upcoming(userId)`와 `past` 첫 페이지를 부른다)
+
+### 2부에서 정한 것 (문서에 없는 구현 선택)
+
+- **`PATCH`가 저장된 값과 같은 값만 보내면 아무것도 바꾸지 않는다** (`updated_at` 그대로, `AnniversaryUpdated` 없음). API.md 3.3 기념일은 이 경우를 적지 않았다. 일정 `PATCH`와 같은 방식을 썼다. 다르게 하려면 `AnniversaryService.update` 한 곳이다
+- **커서 모양**: `base64url("u|<date>|<순번>|<id 또는 빈 값>")`(upcoming), `base64url("p|<date>|<id>")`(past). 문서는 "불투명"이라고만 한다. 다른 경로의 커서나 모양이 틀린 커서는 `cursor` `INVALID`다. 한 요청에서 `size`와 `cursor`가 모두 틀리면 둘 다 담는다(`size` 먼저)
+- **`upcoming`은 전체를 메모리에서 만들고 커서 뒤부터 자른다.** 커서는 키 비교라 커서가 가리키던 항목이 지워져도 이어진다. 직접 기념일이 매우 많을 때의 상한은 문서에 없다
+- **uuid 비교는 부호 없는 바이트 순**이다 (API.md 3.3 리드 보충). 메모리 정렬은 `compareIds`(`Long.compareUnsigned`), `past`는 PostgreSQL이 비교한다. 1부는 `UUID.toString()` 문자열 순서와 JPQL `order by a.id`였는데 같은 결과지만 이제 문서의 근거를 따른다
+- **캘린더용 쿼리 검사는 `EventService.parseRange`와 같은 코드를 복사**했다(일정 조회 규칙과 같다는 문서 문장대로). 공통으로 빼는 것은 이번 범위 밖이다
+- 1부의 "`upcoming` 정렬: 날짜 → 자동 먼저 → …" 선택은 문서(Q-15 기본값, D-106)와 같아서 바뀐 것은 이름뿐이다. 자동 기념일 `name`은 null이 아니라 D-105 문자열이다. 2월 29일 주년(`yearsLater`)은 1부 구현이 FR-ANNIV-02 AC5와 같아 코드는 그대로다 (주석만 고침)
+
+### 문서와 다르거나 비어 있던 곳
+
+- 문서와 1부 구현의 차이는 위 `name`(1부는 null)뿐이었다. 문서가 모순이거나 비어서 멈춘 곳은 없다.
+- API.md 3.3은 `PATCH`의 "변경 없음" 처리, 커서 내부 모양, `upcoming`의 직접 기념일 개수 상한을 적지 않았다 (위 구현 선택).
 
 ## 결정
 
@@ -276,7 +304,7 @@ JVM 메서드 이름에 `/`를 못 쓰므로 경로는 `GET anniversaries`처럼
 
 ## 남은 일
 
-- 사람 확인(**start**) 전에 위 확인 필요 1~5 결정이 필요하다 (6~7번은 추천안 승인만, 8번은 사실 정정)
+- CI 초록불 확인, 사람 리뷰와 머지 (Gradle·Docker가 없는 환경이라 로컬 실행은 못 했다)
 - 단위 5: `CoupleContentGateway`의 `memos` SQL과 `WithdrawalDataEraser`의 `memo_favorites` 삭제를 옮기고 게이트웨이를 없앤다
 - 단위 6: 기념일 알림 스케줄러, SYNC `ANNIVERSARY`, 도메인 이벤트 리스너
-- Docs 후속(확인 필요 1~4가 추천안으로 정해지면 `/prd-sync`로 반영할 것): 3.3 기념일의 `Anniversary` 정의와 쓰기 규칙, 캘린더용 항목 모양, 자동 기념일 `name`, 커서·`size` 공통 규칙
+- Docs 후속은 없다 (확인 필요 1~4는 v0.10에 반영됨). 위 "2부에서 정한 것" 중 `PATCH` 무변경 처리·`upcoming` 개수 상한은 문서에 없으니 필요하면 `/prd-sync`로 정한다
