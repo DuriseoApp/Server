@@ -318,7 +318,7 @@ class MemoWriteTest : MemoTestSupport() {
 		val me = startMember()
 		val id = createMemo(me.accessToken, """{"title":"제목","body":" 본문 ","memoDate":"2026-11-03"}""")
 		val updatedAt = memoRow(id)["updated_at"]
-		clock.advance(Duration.ofHours(1))
+		clock.advance(Duration.ofMinutes(10))
 
 		// 빈 본문, 같은 값(제목은 trim 뒤 같음), null 아닌 날짜가 같음
 		listOf(
@@ -337,7 +337,7 @@ class MemoWriteTest : MemoTestSupport() {
 		assertEquals(0, memoChanges.updated.size)
 		// 하나라도 다르면 변경이다
 		patchMemo(me.accessToken, id, """{"title":"제목","body":" 본문 ","memoDate":"2026-11-04"}""").andExpect(status().isOk)
-			.andExpect(jsonPath("$.updatedAt").value("2026-10-26T01:00:00Z"))
+			.andExpect(jsonPath("$.updatedAt").value("2026-10-26T00:10:00Z"))
 		assertNotEquals(updatedAt, memoRow(id)["updated_at"])
 		assertEquals(1, memoChanges.updated.size)
 	}
@@ -346,7 +346,7 @@ class MemoWriteTest : MemoTestSupport() {
 	fun `FR-MEMO-03 AC4 이미 null인 필드에 null을 보내는 것도 같은 값이다`() {
 		val me = startMember()
 		val id = createMemo(me.accessToken, """{"title":"제목"}""")
-		clock.advance(Duration.ofHours(1))
+		clock.advance(Duration.ofMinutes(10))
 
 		patchMemo(me.accessToken, id, """{"body":null,"memoDate":null}""").andExpect(status().isOk)
 

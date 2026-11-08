@@ -74,7 +74,7 @@ class MemoFavoriteTest : MemoTestSupport() {
 		val id = createMemo(couple.a.accessToken, """{"title":"메모","notifyPartner":false}""")
 		val updatedAt = memoRow(id)["updated_at"]
 		val created = memoChanges.created.size
-		clock.advance(Duration.ofHours(1))
+		clock.advance(Duration.ofMinutes(10))
 
 		// 없는 것을 해제해도 204
 		deleteFavorite(couple.a.accessToken, id).andExpect(status().isNoContent)
@@ -82,7 +82,7 @@ class MemoFavoriteTest : MemoTestSupport() {
 		// 추가, 다시 추가
 		putFavorite(couple.a.accessToken, id).andExpect(status().isNoContent)
 		val favoriteRow = jdbc.queryForMap("select created_at from memo_favorites where memo_id = ?", id)
-		clock.advance(Duration.ofHours(1))
+		clock.advance(Duration.ofMinutes(10))
 		putFavorite(couple.a.accessToken, id).andExpect(status().isNoContent)
 		assertEquals(1, count("select count(*) from memo_favorites"))
 		assertEquals(favoriteRow["created_at"], jdbc.queryForMap("select created_at from memo_favorites where memo_id = ?", id)["created_at"])

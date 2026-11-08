@@ -26,7 +26,7 @@ import java.util.UUID
  * - `PATCH`·`DELETE`는 메모 행만 `FOR UPDATE`로 잠그고 R-01·R-03을 잠근 값으로 다시 확인한다 ([MemoLocker]).
  * - 고정은 알림 행을 만들 수 있어 `POST`와 같이 요청자 행을 먼저 `FOR SHARE`로 잡고 메모 행을 잠근다. 두 사람이 동시에 고정해도
  *   메모 행 잠금 뒤에 `pinned_at`을 다시 읽으므로 전환은 한 번이고 알림도 하나다 (D-134).
- * - 즐겨찾기는 메모 행을 잠그고 `INSERT … ON CONFLICT DO NOTHING`이다.
+ * - 즐겨찾기 추가는 요청자 행을 먼저 `FOR SHARE`로 잡고 메모 행을 잠근 뒤 `INSERT … ON CONFLICT DO NOTHING`이다. 해제는 메모 행만 잠근다.
  *
  * 값 검사는 [MemoWriteRules]가 한다. 검사 순서: `POST`는 R-01 → 값 검사 → 날짜 범위, `PATCH`는 R-01 → R-03 → 값 검사 → 날짜 범위,
  * `DELETE`는 R-01 → R-03 (API.md 3.4 "메모 쓰기 규칙"). 변경은 커밋 뒤 동기화 신호를 위해 [MemoCreated]·[MemoUpdated]·[MemoDeleted]를
@@ -145,6 +145,8 @@ class MemoService(
 	 */
 	@Transactional
 	fun setFavorite(requesterId: UUID, memoId: UUID, favorite: Boolean) {
+		// 추가는 탈퇴 정리(즐겨찾기 삭제) 뒤에 행이 남지 않게 요청자 행을 먼저 `FOR SHARE`로 잡는다 (users → 콘텐츠 행)
+		if (favorite) userService.lockShare(listOf(requesterId))
 		locker.lockInActiveSpace(requesterId, memoId)
 		if (favorite) {
 			favoriteRepository.insertIfAbsent(memoId, requesterId, clock.nowInSeconds())

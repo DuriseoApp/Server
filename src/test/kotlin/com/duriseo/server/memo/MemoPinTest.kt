@@ -96,7 +96,7 @@ class MemoPinTest : MemoTestSupport() {
 		val pinnedRow = memoRow(id)
 		val notifications = count("select count(*) from notifications")
 		val updates = memoChanges.updated.size
-		clock.advance(Duration.ofHours(3))
+		clock.advance(Duration.ofMinutes(10))
 
 		// 같은 사람이 다시, 상대가 다시
 		putPin(couple.a.accessToken, id).andExpect(status().isNoContent)
@@ -150,11 +150,11 @@ class MemoPinTest : MemoTestSupport() {
 		val couple = newCouple()
 		val id = createMemo(couple.a.accessToken, """{"title":"메모"}""")
 		val updatedAt = memoRow(id)["updated_at"]
-		clock.advance(Duration.ofHours(1))
+		clock.advance(Duration.ofMinutes(10))
 
 		putPin(couple.b.accessToken, id).andExpect(status().isNoContent)
 		assertEquals(updatedAt, memoRow(id)["updated_at"])
-		clock.advance(Duration.ofHours(1))
+		clock.advance(Duration.ofMinutes(10))
 		deletePin(couple.a.accessToken, id).andExpect(status().isNoContent)
 		assertEquals(updatedAt, memoRow(id)["updated_at"])
 		getMemo(couple.a.accessToken, id).andExpect(jsonPath("$.updatedAt").value("2026-10-26T00:00:00Z"))

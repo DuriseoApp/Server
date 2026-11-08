@@ -168,6 +168,23 @@ class MemoListTest : MemoTestSupport() {
 	}
 
 	@Test
+	fun `FR-MEMO-01 AC2 created_at이 마이크로초 단위여도 커서 왕복이 손실 없이 이어진다`() {
+		val couple = newCouple()
+		// 초 아래 6자리가 모두 다른 시각과 같은 시각이 섞여 있다
+		val times = listOf("2026-10-20T00:00:00.123456Z", "2026-10-20T00:00:00.123456Z", "2026-10-20T00:00:00.123457Z", "2026-10-20T00:00:00.999999Z", "2026-10-20T00:00:01.000001Z")
+		val ids = times.map { insertMemoRow(couple.spaceId, couple.a.userId, "마이크로초", createdAt = Instant.parse(it)) }
+		ids.forEach { insertMemoFavorite(it, couple.a.userId) }
+
+		listOf("newest", "oldest", "favorites").forEach { view ->
+			val expected = ids.zip(times).sortedWith { x, y -> if (x.second != y.second) x.second.compareTo(y.second) else pgOrder.compare(x.first, y.first) }
+				.map { it.first }.let { if (view == "oldest") it else it.reversed() }
+			listOf(1, 2).forEach { size ->
+				assertEquals(expected, allPages(couple.a.accessToken, view, size), "view=$view size=$size")
+			}
+		}
+	}
+
+	@Test
 	fun `FR-MEMO-01 AC2 size 기본값은 20이고 100까지 받으며 다음 페이지가 있으면 nextCursor를 준다`() {
 		val me = startMember()
 		val space = activeSpaceIdOfUser(me.userId)
