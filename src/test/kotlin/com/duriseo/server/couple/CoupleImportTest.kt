@@ -7,9 +7,11 @@ import com.duriseo.server.support.Tokens
 import org.junit.jupiter.api.Test
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
+import java.time.Instant
 import java.util.UUID
 import kotlin.test.assertEquals
 
@@ -79,7 +81,7 @@ class CoupleImportTest : IntegrationTestSupport() {
 		val b = startMember("비비")
 		val personalOfB = activeSpaceIdOfUser(b.userId)
 		val eventId = insertEventRow(personalOfB, b.userId, title = "비비의 일정", isTogether = false, startDate = "2026-11-03", endDate = "2026-11-03")
-		val fireAt = java.time.Instant.parse("2026-11-03T00:00:00Z")
+		val fireAt = Instant.parse("2026-11-03T00:00:00Z")
 		insertEventReminderRow(eventId, b.userId, "ALLDAY_9AM", fireAt)
 		val coupleSpaceId = connect(a, b)
 
@@ -250,5 +252,33 @@ class CoupleImportTest : IntegrationTestSupport() {
 			assertEquals(1, count("select count(*) from memos where id = ?", couple.memoId))
 			assertEquals(0, count("select count(*) from space_members where user_id = ? and left_at is not null and space_id = ?", couple.b.userId, couple.personalOfB))
 		}
+	}
+
+	@Test
+	fun `FR-COUPLE-03 AC1 가져오기는 메모와 즐겨찾기 고정 상태를 그대로 옮긴다`() {
+		val couple = pendingCouple()
+		val pinnedAt = Instant.parse("2026-10-20T01:02:03Z")
+		jdbc.update("update memos set pinned_at = ?, pinned_by = ?, memo_date = date '2026-11-03' where id = ?", ts(pinnedAt), couple.b.userId, couple.memoId)
+		insertMemoFavorite(couple.memoId, couple.b.userId)
+		val before = jdbc.queryForMap("select title, author_id, created_at, updated_at, pinned_at, pinned_by, memo_date::text as memo_date from memos where id = ?", couple.memoId)
+		// 가져오기 전 대기 공간의 메모 개수가 importCounts.memos에 나온다 (메모 서비스가 센다)
+		getMe(couple.b.accessToken).andExpect(jsonPath("$.space.importCounts.memos").value(1))
+
+		importRecords(couple.b.accessToken, true).andExpect(status().isNoContent)
+
+		assertEquals(couple.coupleSpaceId, spaceOfRecord("memos", couple.memoId))
+		// space_id만 바뀌고 작성자·시각·고정 상태·날짜는 그대로다 (알림 행도 만들지 않는다)
+		assertEquals(before, jdbc.queryForMap("select title, author_id, created_at, updated_at, pinned_at, pinned_by, memo_date::text as memo_date from memos where id = ?", couple.memoId))
+		assertEquals(1, count("select count(*) from memo_favorites where memo_id = ? and user_id = ?", couple.memoId, couple.b.userId))
+		assertEquals(0, count("select count(*) from notifications where type in ('PARTNER_CREATED', 'MEMO_PINNED')"))
+		// 커플 공간의 고정 영역에 보이고, 즐겨찾기는 B에게만 보인다
+		getMe(couple.b.accessToken).andExpect(jsonPath("$.space.importCounts").doesNotExist())
+		mockMvc.perform(get("$API/memos/pinned").header("Authorization", "Bearer ${couple.a.accessToken}"))
+			.andExpect(status().isOk)
+			.andExpect(jsonPath("$.items[0].id").value(couple.memoId.toString()))
+			.andExpect(jsonPath("$.items[0].isFavorite").value(false))
+		mockMvc.perform(get("$API/memos/${couple.memoId}").header("Authorization", "Bearer ${couple.b.accessToken}"))
+			.andExpect(jsonPath("$.isFavorite").value(true))
+			.andExpect(jsonPath("$.isPinned").value(true))
 	}
 }

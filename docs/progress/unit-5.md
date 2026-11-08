@@ -134,6 +134,15 @@ JVM 메서드 이름에 `/`를 못 쓰므로 경로는 `GET memos pinned`처럼 
 
 구현하면서 정한 것 중 문서에 없는 것. 문서에 있어야 할 결정이면 여기 적지 말고 작업을 멈추고 보고한다.
 
+- 고정(`PUT /memos/{id}/pin`)은 알림 행을 만들 수 있어 `POST`와 같이 요청자 사용자 행을 `FOR SHARE`로 먼저 잡은 뒤 메모 행을 `FOR UPDATE`로 잠근다(users → 콘텐츠 행). 해제·즐겨찾기·`PATCH`·`DELETE`는 메모 행만 잠근다. 즐겨찾기도 메모 행을 잠근다: 삭제·이동과 겹쳐 FK 위반(500)이 나지 않게 한다
+- `POST /memos`는 상대 사용자 행을 잡지 않는다(일정과 다름). 해제·탈퇴가 두 사람의 사용자 행을 모두 잠그므로 요청자 행 하나로 한 줄이 서고, 잠근 뒤 상대를 읽으므로 `PartnerLockRetry`가 필요 없다
+- 커서 내용: `view|created_at(ISO 8601, 마이크로초까지)|id`를 base64url로 감쌌다. `view`가 다르면 `cursor` `INVALID` (확인 필요 4)
+- `PATCH`/`POST`에서 "제목·본문 둘 다 비면 `REQUIRED`"는 제목·본문 값 자체에 오류(`INVALID`, `TOO_LONG`)가 없을 때만 담는다(같은 필드에 두 이유를 담지 않으려는 것)
+- `MemoUpdated`에 `partnerUserId`·`notificationId`(없으면 null)를 실어 단위 6이 `MEMO_PINNED` 푸시와 `NOTIFICATION` 신호를 보낼 수 있게 했다 (`MemoCreated`가 `PARTNER_CREATED`에 하는 것과 같다)
+- 날짜 범위 조회 검사·잘라내기는 `common/api/DateRangeQuery`로 뽑아 `GET /memos/dated`가 쓴다. `GET /events`·`GET /anniversaries`는 같은 규칙의 자기 복사본을 그대로 둔다(이 단위에서 건드리지 않음)
+- 알림 본문 "제목 또는 첫 줄"은 `NotificationTexts.memoLine`(순수 함수)이다. 제목도 본문도 없으면 null이지만 저장된 메모에서는 나오지 않는다
+- 메모 이벤트의 `MemoChangeRecorder`(테스트 지원)를 `FakeCouple.kt`에 추가했다
+
 ## 리뷰 기록
 
 | 회차 | Critical | Major | 비고 |

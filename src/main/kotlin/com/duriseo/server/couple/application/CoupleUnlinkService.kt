@@ -2,6 +2,7 @@ package com.duriseo.server.couple.application
 
 import com.duriseo.server.common.access.SpaceAccessPolicy
 import com.duriseo.server.common.time.nowInSeconds
+import com.duriseo.server.event.application.EventContentService
 import com.duriseo.server.notification.application.NotificationService
 import com.duriseo.server.space.application.SpaceService
 import com.duriseo.server.space.domain.SpaceType
@@ -30,7 +31,7 @@ class CoupleUnlinkService(
 	private val policy: SpaceAccessPolicy,
 	private val userService: UserService,
 	private val spaceService: SpaceService,
-	private val content: CoupleContentGateway,
+	private val eventContent: EventContentService,
 	private val notifications: NotificationService,
 	private val events: ApplicationEventPublisher,
 	private val clock: Clock,
@@ -76,7 +77,7 @@ class CoupleUnlinkService(
 		val memberIds = spaceService.unlinkCoupleSpace(spaceId, now)
 		val partnerId = memberIds.single { it != actorId }
 		// 3. 그 공간의 일정 알림과 공간에 묶인 알림을 두 사람 모두 지운다 (D-45)
-		content.deleteEventReminders(spaceId)
+		eventContent.deleteRemindersOfSpace(spaceId)
 		notifications.deleteOfSpace(spaceId)
 		// 4. 두 사람 각자의 개인 공간: 가져오기 대기 공간이 있으면 되살리고, 없으면 새 빈 개인 공간 (D-78)
 		memberIds.filter { !(byWithdrawal && it == actorId) }.forEach { spaceService.restoreOrCreatePersonalSpace(it) }

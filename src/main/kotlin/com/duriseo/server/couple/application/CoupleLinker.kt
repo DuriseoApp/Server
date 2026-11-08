@@ -8,10 +8,13 @@ import com.duriseo.server.common.api.FieldError
 import com.duriseo.server.common.api.FieldErrorDetails
 import com.duriseo.server.common.api.FieldErrorReason
 import com.duriseo.server.common.api.RetryDetails
+import com.duriseo.server.anniversary.application.AnniversaryContentService
 import com.duriseo.server.common.time.nowInSeconds
 import com.duriseo.server.couple.domain.InviteCodeAttempt
 import com.duriseo.server.couple.domain.InviteCodeAttemptRepository
 import com.duriseo.server.couple.domain.InviteCodeRepository
+import com.duriseo.server.event.application.EventContentService
+import com.duriseo.server.memo.application.MemoContentService
 import com.duriseo.server.notification.application.NotificationService
 import com.duriseo.server.space.application.SpaceService
 import com.duriseo.server.user.application.UserService
@@ -45,7 +48,9 @@ class CoupleLinker(
 	private val attempts: InviteCodeAttemptRepository,
 	private val userService: UserService,
 	private val spaceService: SpaceService,
-	private val content: CoupleContentGateway,
+	private val eventContent: EventContentService,
+	private val anniversaryContent: AnniversaryContentService,
+	private val memoContent: MemoContentService,
 	private val notifications: NotificationService,
 	private val events: ApplicationEventPublisher,
 	private val clock: Clock,
@@ -160,11 +165,17 @@ class CoupleLinker(
 
 	private fun settlePersonalSpace(userId: UUID, now: Instant) {
 		val personalSpaceId = checkNotNull(policy.activeSpaceIdOf(userId)) { "user has no active space" }
-		if (content.hasContent(personalSpaceId)) {
+		if (hasContent(personalSpaceId)) {
 			spaceService.leaveSpace(userId, personalSpaceId, now)
 		} else {
 			spaceService.deleteSpace(personalSpaceId)
 		}
+	}
+
+	/** 혼자 쓴 기록(일정·직접 기념일·메모)이 있는지 (API.md 4.4 5단계, ERD 4.1). 각 도메인 서비스가 센다 */
+	private fun hasContent(spaceId: UUID): Boolean {
+		val ids = listOf(spaceId)
+		return eventContent.countIn(ids) > 0 || anniversaryContent.countIn(ids) > 0 || memoContent.countIn(ids) > 0
 	}
 
 	private companion object {
