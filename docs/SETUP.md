@@ -79,7 +79,7 @@ Settings › Environments에서 두 개를 만들어요.
 
 ### 3.5 비밀값 (Parameter Store)
 
-비밀값은 GitHub이나 문서에 두지 않고 AWS Parameter Store에만 둬요. 서버가 배포할 때 읽어요. 앱이 아직 쓰지 않으므로 해당 단위(카카오 탈퇴: 단위 1, 푸시: 단위 6) 전에만 넣으면 돼요.
+비밀값은 GitHub이나 문서에 두지 않고 AWS Parameter Store에만 둬요. 서버가 배포할 때 읽어요. 카카오 어드민 키는 단위 1부터 앱이 써요(비어 있으면 탈퇴 때 카카오 연결 끊기를 건너뛰고, 카카오 연결 해제 웹훅이 모두 401이에요). Firebase 키는 푸시를 만드는 단위 6 전에 넣으면 돼요.
 
 Systems Manager › 파라미터 스토어 › 파라미터 생성: 계층 **표준**, 유형 **SecureString**, KMS 키 소스 **내 현재 계정**(`alias/aws/ssm`).
 
@@ -91,6 +91,8 @@ Systems Manager › 파라미터 스토어 › 파라미터 생성: 계층 **표
 DB 비밀번호와 토큰 서명 키(`JWT_SECRET`)는 서버가 처음 배포할 때 스스로 만들어요. 사람이 알 필요가 없어요.
 
 ### 3.6 첫 배포 확인
+
+처음 서버를 만든 뒤 한 번만 해요. 이미 배포돼 있으면 건너뛰어요.
 
 1. GitHub Actions › 배포 › Run workflow › 환경 `dev` › Run (이후로는 main 머지마다 자동이에요).
 2. 끝나면 브라우저에서 `https://<개발 도메인>/actuator/health`를 열어 `{"status":"UP"...}`이 나오면 성공이에요. 인증서는 첫 요청 때 자동으로 받아요 (DuckDNS IP가 맞아야 해요).

@@ -26,7 +26,7 @@
 | `docs/PLAN.md` | 작업 단위와 순서. 지금 어디까지 했는지 |
 | `docs/SETUP.md` | 맥 설정, 환경변수, AWS 서버 처음 준비 |
 | `docs/DEPLOY.md` | 배포, 서버 로그 보기, 되돌리기, 백업 복구 (`deploy/`, `.github/workflows/deploy.yml`) |
-| `docs/progress/` | 작업 단위별 진행 기록 |
+| `docs/progress/` | 진행 중인 단위의 진행 기록. 끝난 단위는 `docs/progress/archive/` |
 
 ## 가장 중요한 규칙
 
