@@ -2,7 +2,7 @@
 
 작업 단위 하나가 PR 하나예요. 단위가 끝나면 이 표의 상태를 같은 PR에서 바꿔요. 화면·기능 내용은 Docs를 보고, 여기에는 순서와 범위만 적어요. 기준 Docs는 PRD v0.12예요.
 
-**지금 위치:** 키트 1~3과 단위 1~4가 머지됐고 개발 서버(dev)에 배포돼 있어요 (main `e0a7611`). 단위 5(메모)를 진행 중이에요. 끝난 단위의 진행 기록은 `docs/progress/archive/`에 있어요.
+**지금 위치:** 키트 1~3과 단위 1~4가 머지됐고 개발 서버(dev)에 배포돼 있어요 (main `e0a7611`). 단위 5(메모)는 PR #11로 머지 대기예요. 끝난 단위의 진행 기록은 `docs/progress/archive/`에 있어요.
 
 상태: 완료 = 머지됨 · PR 완료 = PR을 열었고 머지 대기 · 대기 = 아직 시작 안 함.
 
@@ -16,18 +16,13 @@
 | 배포 1 | 단위 2까지 AWS dev에 배포해 두 기기로 연결 확인. 사용자가 `docs/SETUP.md` 3장(AWS·DuckDNS·GitHub 환경)을 마쳐야 한다 | 키트 3 | dev 배포됨. 두 기기 연결 확인은 기록 없음 (사용자 확인) |
 | 3 | 캘린더: 일정, 일정 알림, 날짜 범위. 상대에게 `PARTNER_CREATED` 알림 행 | FR-CAL, API 3.3, R-02·R-07·R-10·R-13·R-15 | 완료 (PR #8) |
 | 4 | 기념일: 자동 기념일 계산, 직접 기념일, 목록 2종, 캘린더용 범위 조회 | FR-ANNIV, API 3.3, R-05 | 완료 (PR #9) |
-| 5 | 메모: 메모, 날짜, 고정, 즐겨찾기 | FR-MEMO, API 3.4, R-03·R-04·R-06 | 대기 |
+| 5 | 메모: 메모, 날짜, 고정, 즐겨찾기 | FR-MEMO, API 3.4, R-03·R-04·R-06 | PR 완료 (PR #11) |
 | 6 | 알림: 알림 목록, 알림 설정, 푸시(FCM)·동기화 신호, 스케줄러(일정·기념일 알림), 정리 작업 | FR-NOTI, API 3.5·6장·7장, ERD 4.4 | 대기 |
 | 7 | 프로필 사진: 업로드·재인코딩·S3 | FR-AUTH-07, API 8장, NFR-FILE-01 | 대기 |
 
 ## 앞 단위에서 넘어온 일
 
-단위 1~4 진행 기록의 "남은 일" 중 아직 안 끝난 것만 모았어요. 단위를 시작할 때 진행 기록 범위 표에 넣어요. 끝난 일(일정 알림·초대코드·알림 행 삭제 이동, `CoupleContentGateway`의 일정·기념일 이동)은 뺐어요.
-
-### 단위 5 (메모)
-
-- `CoupleContentGateway`에 남은 `memos` 네이티브 SQL 3곳(`hasContent`·`countsOf`·`moveAll`)을 메모 도메인 서비스로 옮기고 이 클래스를 없앤다 (`ImportCounts`의 `memos` 개수 포함, ARCHITECTURE 2장의 임시 예외 해소).
-- `WithdrawalDataEraser`의 `memo_favorites` 삭제를 메모 서비스로 옮긴다.
+단위 1~4 진행 기록의 "남은 일" 중 아직 안 끝난 것만 모았어요. 단위를 시작할 때 진행 기록 범위 표에 넣어요. 끝난 일(일정 알림·초대코드·알림 행 삭제 이동, `CoupleContentGateway` 제거와 탈퇴 즐겨찾기 삭제 이동)은 뺐어요.
 
 ### 단위 6 (알림)
 
@@ -36,6 +31,7 @@
 - `CoupleLinked`·`CoupleUnlinked`·`SpaceUpdated`·`UserWithdrawn`을 듣는 푸시와 SYNC(`SPACE`의 `LINKED`·`UNLINKED`·`UPDATED`, 행이 생긴 본인에게 `NOTIFICATION`). 탈퇴로 인한 해제는 `CoupleUnlinked`(`byWithdrawal`)와 `UserWithdrawn.partnerUserId` 두 곳에 담겨 있으니 한쪽에서만 보낸다.
 - `EventCreated`·`EventUpdated`·`EventDeleted`를 듣는 SYNC `EVENT`, `PARTNER_CREATED` 푸시(상대의 `partner_created` 설정과 유효 세션을 본다)와 `NOTIFICATION` 신호.
 - `AnniversaryCreated`·`AnniversaryUpdated`·`AnniversaryDeleted`를 듣는 SYNC `ANNIVERSARY`.
+- `MemoCreated`·`MemoUpdated`(수정·고정·해제)·`MemoDeleted`를 듣는 SYNC `MEMO`, `PARTNER_CREATED`(메모)·`MEMO_PINNED` 푸시(상대의 `partner_created`·`memo_pinned` 설정과 유효 세션)와 `NOTIFICATION` 신호. 이벤트에 받는 사람(`partnerUserId`)과 알림 ID(`notificationId`)가 실려 있다. 즐겨찾기는 신호 없음 (D-134).
 - 일정 알림 스케줄러(1분마다 `fire_at <= now`이고 `sent_at` 없는 `event_reminders`를 `EVENT_REMINDER` 행으로 만들고 `sent_at` 기록, 푸시). 서버 1대 가정의 중복 방지(DB-03)를 같이 본다.
 - 기념일 알림 스케줄러(매시 정각, `ANNIVERSARY` 행·푸시). 단위 4의 `AnniversaryCalculator`를 재사용한다.
 - 정리 작업(ERD 4.4): 게스트 정리(`WithdrawalService.eraseInTransaction`을 그대로 부른다), `purge_at` 지난 공간, 7일 지난 `invite_code_attempts`, 30일 지난 초대코드, 만료 세션(`REPLACED`는 `expires_at`까지 남김), 세션 없는 사용자의 `devices`, 30일 지난 `notifications`.

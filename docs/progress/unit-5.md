@@ -1,6 +1,6 @@
 # 단위 5: 메모 — 메모, 날짜, 고정, 즐겨찾기 (memo)
 
-> 브랜치: `feat/5-memo` · PR: (링크) · 상태: 진행 중 (2026-11-08 범위 승인, 확인 필요 1~7 추천안대로)
+> 브랜치: `feat/5-memo` · PR: #11 · 상태: PR 완료 (2026-11-08 범위 승인, 확인 필요 1~7 추천안대로)
 > 기준: PRD v0.12 (6.5 FR-MEMO, 7장, 8장, D-17·D-18·D-21·D-24·D-38·D-123·D-130~D-135), API.md 1장·1.1·2장(R-01·R-03·R-04·R-06·R-15)·3.3 "커서 정렬 키"·3.4·5장·6장·7장 "상대 활동 알림", ERD 3장(memos, memo_favorites, notifications)·4.1·4.3
 > Docs 기준 커밋: DuriseoApp/Docs main `cee0885` (PR #17 머지 뒤)
 > 앞 단위: 단위 4 머지됨 (main `2808e1b`, 개발 서버 배포)
@@ -147,7 +147,10 @@ JVM 메서드 이름에 `/`를 못 쓰므로 경로는 `GET memos pinned`처럼 
 
 | 회차 | Critical | Major | 비고 |
 | --- | --- | --- | --- |
+| 1 (sonnet) | 0 | 1 | Major: 즐겨찾기 추가가 요청자 행 `FOR SHARE`를 먼저 잡지 않아 탈퇴 정리 뒤 행이 남을 수 있음 → 수정, 리드 확인. Minor: 마이크로초 커서 테스트 추가. 남긴 Minor: 날짜 범위 검사 복사본 3곳, `create`의 활성 공간 없음 `checkNotNull`(일정 선례) |
+| CI | — | — | 1차: 시계를 1시간 넘겨 access 토큰 만료로 5건 실패(테스트 문제) → 10분으로 고쳐 통과 |
 
 ## 남은 일
 
-- 단위 6으로: `MemoCreated`·`MemoUpdated`·`MemoDeleted`를 듣는 SYNC `MEMO`, `PARTNER_CREATED`(메모)·`MEMO_PINNED` 푸시와 `NOTIFICATION` 신호
+- 정리 후보: 날짜 범위 조회 검사·잘라내기를 `GET /events`·`GET /anniversaries`도 `common/api/DateRangeQuery`로 모은다 (지금 같은 규칙 복사본 3곳)
+- 단위 6으로 (PLAN.md에 옮김): `MemoCreated`·`MemoUpdated`·`MemoDeleted`를 듣는 SYNC `MEMO`, `PARTNER_CREATED`(메모)·`MEMO_PINNED` 푸시와 `NOTIFICATION` 신호
