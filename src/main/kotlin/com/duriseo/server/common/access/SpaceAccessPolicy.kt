@@ -136,6 +136,15 @@ class SpaceAccessPolicy(private val em: EntityManager) {
 	}
 
 	/**
+	 * R-03: 메모의 제목·본문·메모 날짜 수정과 메모 삭제는 요청자 = `author_id`일 때만. 아니면 403 `NOT_AUTHOR`.
+	 * 메모 엔티티를 모르는 `common`이라 값만 받는다. R-01(404)을 통과한 뒤, 메모 행을 잠근 상태에서 부른다.
+	 * 고정·해제(R-04)와 즐겨찾기(R-06)는 작성자 검사가 없고 R-01만 본다.
+	 */
+	fun requireMemoAuthor(requesterId: UUID, authorId: UUID) {
+		if (requesterId != authorId) throw notAuthor()
+	}
+
+	/**
 	 * R-11: 프로필 사진 조회는 본인 또는 같은 활성 공간의 구성원만. 아니면 404 `NOT_FOUND`.
 	 * 없는 사용자, 탈퇴한 사용자(`deleted_at` 있음), 다른 공간의 사용자, 연결이 해제된 이전 상대는 모두 같은 404다.
 	 */

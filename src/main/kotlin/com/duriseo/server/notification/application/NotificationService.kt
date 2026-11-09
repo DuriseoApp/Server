@@ -14,7 +14,7 @@ import java.util.UUID
 /**
  * 알림 행을 만든다 (API.md 7장 "받는 사람마다 `notifications` 행을 먼저 만든다", ERD DB-07).
  * 푸시와 동기화 신호 `NOTIFICATION`은 단위 6이 커밋 뒤에 보낸다. 부른 쪽의 트랜잭션 안에서 만든다.
- * 연결·해제 알림(단위 2)과 상대 일정 추가 알림(단위 3)을 만든다. 목록·읽음·설정 API와 일정·기념일 알림 작업은 단위 6이다.
+ * 연결·해제 알림(단위 2), 상대 일정 추가 알림(단위 3), 상대 메모 추가·메모 고정 알림(단위 5)을 만든다. 목록·읽음·설정 API와 일정·기념일 알림 작업은 단위 6이다.
  */
 @Service
 class NotificationService(private val notifications: NotificationRepository) {
@@ -87,6 +87,65 @@ class NotificationService(private val notifications: NotificationRepository) {
 		)
 		notification.spaceId = spaceId
 		notification.targetId = eventId
+		return notifications.save(notification).requireId()
+	}
+
+	/**
+	 * 상대의 메모 추가 알림 (API.md 7장 "상대 활동 알림", PRD 8장, FR-NOTI-04). 받는 사람의 `partner_created` 설정과 관계없이 행은 만든다.
+	 * `target_type` `MEMO`, `target_id` 메모 ID, `space_id` 커플 공간. 본문은 [NotificationTexts.memoLine]이다. 만든 알림 ID를 돌려준다.
+	 */
+	@Transactional(propagation = Propagation.MANDATORY)
+	fun createPartnerMemoCreated(
+		recipientUserId: UUID,
+		authorNickname: String,
+		memoTitle: String?,
+		memoBody: String?,
+		spaceId: UUID,
+		memoId: UUID,
+		now: Instant,
+	): UUID = saveMemoNotification(
+		recipientUserId, NotificationType.PARTNER_CREATED, NotificationTexts.partnerMemoCreatedTitle(authorNickname),
+		memoTitle, memoBody, spaceId, memoId, now,
+	)
+
+	/**
+	 * 메모 고정 알림 (API.md 7장, PRD 8장, D-135): 미고정 → 고정으로 바뀔 때마다 고정하지 않은 쪽에게. 받는 사람의 `memo_pinned` 설정과
+	 * 관계없이 행은 만든다. `target_type` `MEMO`, `target_id` 메모 ID, `space_id` 커플 공간. 만든 알림 ID를 돌려준다.
+	 */
+	@Transactional(propagation = Propagation.MANDATORY)
+	fun createMemoPinned(
+		recipientUserId: UUID,
+		pinnerNickname: String,
+		memoTitle: String?,
+		memoBody: String?,
+		spaceId: UUID,
+		memoId: UUID,
+		now: Instant,
+	): UUID = saveMemoNotification(
+		recipientUserId, NotificationType.MEMO_PINNED, NotificationTexts.memoPinnedTitle(pinnerNickname),
+		memoTitle, memoBody, spaceId, memoId, now,
+	)
+
+	private fun saveMemoNotification(
+		recipientUserId: UUID,
+		type: NotificationType,
+		title: String,
+		memoTitle: String?,
+		memoBody: String?,
+		spaceId: UUID,
+		memoId: UUID,
+		now: Instant,
+	): UUID {
+		val notification = Notification(
+			userId = recipientUserId,
+			type = type,
+			title = title,
+			body = NotificationTexts.memoLine(memoTitle, memoBody),
+			targetType = NotificationTargetType.MEMO,
+			now = now,
+		)
+		notification.spaceId = spaceId
+		notification.targetId = memoId
 		return notifications.save(notification).requireId()
 	}
 

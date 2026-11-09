@@ -6,6 +6,9 @@ import com.duriseo.server.common.api.ErrorCode
 import com.duriseo.server.common.api.FieldError
 import com.duriseo.server.common.api.FieldErrorDetails
 import com.duriseo.server.common.api.FieldErrorReason
+import com.duriseo.server.anniversary.application.AnniversaryContentService
+import com.duriseo.server.event.application.EventContentService
+import com.duriseo.server.memo.application.MemoContentService
 import com.duriseo.server.space.application.SpaceService
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -25,7 +28,9 @@ import java.util.UUID
 class CoupleImportService(
 	private val policy: SpaceAccessPolicy,
 	private val spaceService: SpaceService,
-	private val content: CoupleContentGateway,
+	private val eventContent: EventContentService,
+	private val anniversaryContent: AnniversaryContentService,
+	private val memoContent: MemoContentService,
 ) {
 
 	/** [rawImport]는 JSON 값 그대로다. R-18이 `import` 검사(400)보다 먼저다 */
@@ -38,7 +43,12 @@ class CoupleImportService(
 		// 잠근 뒤 다시 확인한다: 그 사이 해제됐거나 같은 사람의 다른 요청이 먼저 정했으면 409 NO_IMPORT_PENDING
 		val pending = policy.requireImportPending(requesterId)
 		pending.personalSpaceIds.forEach { personalSpaceId ->
-			if (shouldImport) content.moveAll(personalSpaceId, pending.coupleSpaceId)
+			if (shouldImport) {
+				// `space_id`만 바꾼다. 작성자·시각·고정 상태·즐겨찾기는 그대로 (4.4 9단계)
+				eventContent.moveAll(personalSpaceId, pending.coupleSpaceId)
+				anniversaryContent.moveAll(personalSpaceId, pending.coupleSpaceId)
+				memoContent.moveAll(personalSpaceId, pending.coupleSpaceId)
+			}
 			spaceService.deleteSpace(personalSpaceId)
 		}
 	}

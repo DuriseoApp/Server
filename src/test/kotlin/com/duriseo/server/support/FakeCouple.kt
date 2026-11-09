@@ -10,6 +10,9 @@ import com.duriseo.server.couple.application.RandomInviteCodeGenerator
 import com.duriseo.server.event.application.EventCreated
 import com.duriseo.server.event.application.EventDeleted
 import com.duriseo.server.event.application.EventUpdated
+import com.duriseo.server.memo.application.MemoCreated
+import com.duriseo.server.memo.application.MemoDeleted
+import com.duriseo.server.memo.application.MemoUpdated
 import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Primary
@@ -164,6 +167,37 @@ class AnniversaryChangeRecorder {
 	}
 }
 
+/** 커밋 뒤에 전달된 `MemoCreated`·`MemoUpdated`·`MemoDeleted`를 모은다. 롤백된 트랜잭션의 이벤트는 오지 않는다 */
+class MemoChangeRecorder {
+
+	val created = CopyOnWriteArrayList<MemoCreated>()
+
+	val updated = CopyOnWriteArrayList<MemoUpdated>()
+
+	val deleted = CopyOnWriteArrayList<MemoDeleted>()
+
+	fun reset() {
+		created.clear()
+		updated.clear()
+		deleted.clear()
+	}
+
+	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+	fun record(event: MemoCreated) {
+		created.add(event)
+	}
+
+	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+	fun record(event: MemoUpdated) {
+		updated.add(event)
+	}
+
+	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+	fun record(event: MemoDeleted) {
+		deleted.add(event)
+	}
+}
+
 /** 커플 통합 테스트가 쓰는 가짜들. `TestClockConfig`가 함께 가져와 컨텍스트가 하나로 공유된다 */
 @TestConfiguration(proxyBeanMethods = false)
 class TestCoupleConfig {
@@ -180,4 +214,7 @@ class TestCoupleConfig {
 
 	@Bean
 	fun anniversaryChangeRecorder() = AnniversaryChangeRecorder()
+
+	@Bean
+	fun memoChangeRecorder() = MemoChangeRecorder()
 }
