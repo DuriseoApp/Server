@@ -112,6 +112,18 @@
 - 묶음 C가 쓸 공용 함수: `NotificationDispatcher.dispatch(notificationId, withPush = true)` (커밋 뒤에 부른다. 지연 10분 초과는 `withPush = false`).
 - 의존성 `com.google.firebase:firebase-admin:9.5.0`(이 환경에서 Maven을 못 봐 버전은 CI에서 확인).
 
+묶음 C·D (2026-11-11):
+
+- 코드는 `job/`에 둔다(`EventReminderJob`, `AnniversaryReminderJob`, `CleanupJob`, SQL은 `CleanupStore`). 다른 도메인 테이블(event_reminders, events, anniversaries, spaces, users, auth_sessions, devices …)은 `push/PushStore`처럼 네이티브 쿼리로 읽고 지운다. 알림 행은 `NotificationService.createEventReminder`·`createAnniversary`로 만든다(`EventReminderTexts`가 일정 알림 본문).
+- 스케줄링은 `duriseo.jobs.enabled`(기본 true)가 true일 때만 켠다(`JobConfig`). 테스트는 `src/test/resources/application.properties`에서 false로 두고 작업 메서드(`run()`)를 직접 부른다. 작업은 `fixedDelay`·`cron`이라 같은 작업은 겹치지 않고, 스케줄러 스레드는 3개(`spring.task.scheduling.pool.size`)라 작업끼리 서로 기다리지 않는다. ShedLock 없음(DB-03).
+- 일정 알림은 후보 ID를 잠금 없이 (`fire_at`, `id`) 커서로 100개씩 읽고, **알림 행마다 자기 트랜잭션**에서 처리한다: 사용자 행 `FOR SHARE`(`UserService.lockShare`) → 알림 행 `FOR UPDATE OF r SKIP LOCKED`(같은 SQL이 `sent_at IS NULL`·`fire_at <= now`를 다시 확인하고 일정 제목·시작·공간과 알림 주인 시간대를 함께 읽음) → `sent_at` 기록 + 알림 행 생성 → 커밋 → `dispatch`. 사용자 행을 먼저 잡는 이유: 알림 행을 먼저 잡으면 `PATCH /me`(사용자 행 `FOR UPDATE` → 알림 행 수정)와 서로 기다린다(알림 행 잠금 → 알림 행 insert의 사용자 FK 확인). 한 행의 실패는 로그만 남기고 다음 행으로 넘어간다(커서라 실패한 행이 뒤를 막지 않는다).
+- D-137의 "10분 넘게"는 `fire_at < now − 10분`(정확히 10분은 푸시)이다.
+- 기념일 알림은 먼저 `users.time_zone` 값 중 지금 현지 시가 9인 것을 고르고(해석 못 하는 값은 UTC로 봄), 그 시간대의 활성 공간 구성원을 사용자 ID 순으로 100명씩 읽어 **사용자마다 자기 트랜잭션**에서 처리한다. 사용자 행을 `lockForUpdate`로 잡은 뒤 활성 공간·시간대를 다시 읽고 현지 시가 아직 9인지 다시 확인한다. 같은 제목이 같은 실행·현지 오늘 구간에 이미 있으면 건너뛴다(DB-18). 알림의 `space_id`는 사용자의 활성 공간이다.
+- 정리 작업의 지우기는 한 묶음(500행)씩 `limit` 서브쿼리로 되풀이하고 묶음마다 트랜잭션이다. 지우는 조건은 모두 삭제 SQL 안에 있어 조회와 삭제 사이에 바뀐 행(복구된 공간 등)은 지우지 않는다. 경계: `purge_at <= now`, 알림 `created_at <= now − 30일`(조회 경계 `>`와 짝), 시도 기록 `attempted_at < now − 7일`. 초대코드가 "끝난 때" = 사용·무효·만료 시각 중 가장 이른 것이고 그것이 30일보다 오래면 지운다(유효한 코드는 끝난 때가 미래).
+- 3단계(탈퇴 사용자 행)는 `space_members`(떠난 소속 포함)와 `events.author_id/updated_by`, `anniversaries.author_id`, `memos.author_id/pinned_by`(RESTRICT)가 없을 때만 지운다. 게스트 정리 뒤 개인 공간이 지워지면 같은 실행의 3단계가 그 게스트 행까지 지운다.
+- 게스트 정리는 사용자마다 `CleanupStore.eraseGuest`(트랜잭션 하나)에서 유효 세션이 아직 없는지 다시 확인한 뒤 `eraseInTransaction(unlinkFromKakao = false)`를 부른다. 게스트는 커플이 될 수 없어 `PartnerLockRetry` 없이 부른다.
+- 새 마이그레이션 없음: 1분 작업은 `ix_event_reminders_unsent_fire_at`(부분), 알림 목록은 `ix_notifications_user_created`, 공간 삭제는 `ix_spaces_purge_at`을 쓴다. 하루 한 번 도는 정리(알림 `created_at`, 세션 `expires_at`, 시도 기록 `attempted_at`)와 매시 도는 `users.time_zone` 고유값 조회는 인덱스 없는 훑기다. 데이터가 커져 느려지면 그때 새 버전으로 인덱스를 더한다.
+
 ## 리뷰 기록
 
 | 회차 | Critical | Major | 비고 |

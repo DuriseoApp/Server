@@ -34,6 +34,15 @@ object NotificationTexts {
 	/** 상대가 메모를 고정했을 때 (PRD 8장, D-135). [pinnerNickname]은 고정한 사람의 닉네임 */
 	fun memoPinnedTitle(pinnerNickname: String) = "${pinnerNickname}님이 메모를 고정했어요"
 
+	/** 기념일 알림 제목 (PRD 8장): "오늘은 [기념일 이름]이에요". 자동·직접 모두 같다 */
+	fun anniversaryTitle(name: String) = "오늘은 ${name}이에요"
+
+	/** 자동 기념일 본문: "함께한 지 D+[N]" (N = 그날의 D+ 값, 처음 만난 날 = D+1) */
+	fun autoAnniversaryBody(dayCount: Long) = "함께한 지 D+$dayCount"
+
+	/** 직접 기념일 본문 (D-55): 매년 반복이고 두 번째 해부터는 "[N]번째 맞는 날이에요", 그 밖에는 "오늘이에요" */
+	fun customAnniversaryBody(nthYear: Int?) = if (nthYear == null) "오늘이에요" else "${nthYear}번째 맞는 날이에요"
+
 	/** 알림 본문 첫 줄이 길 때 자르는 길이 (D-131, D-82: 코드 포인트) */
 	const val MEMO_LINE_MAX = 50
 
