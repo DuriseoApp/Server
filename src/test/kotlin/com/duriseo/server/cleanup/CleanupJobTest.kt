@@ -160,7 +160,8 @@ class CleanupJobTest : NotificationTestSupport() {
 		// 보관 중인 공간의 소속·작성자로 참조되는 사용자와 탈퇴하지 않은 사용자는 남는다
 		assertEquals(true, userExists(keptByRetainedSpace))
 		assertEquals(true, userExists(active))
-		assertEquals(1, count("select count(*) from space_members where space_id = ?", retained))
+		// 보관 중인 공간의 소속은 두 행 모두 그대로다 (탈퇴한 사용자와 active)
+		assertEquals(2, count("select count(*) from space_members where space_id = ?", retained))
 	}
 
 	@Test

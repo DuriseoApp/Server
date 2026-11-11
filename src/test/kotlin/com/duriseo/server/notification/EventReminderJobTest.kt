@@ -150,7 +150,8 @@ class EventReminderJobTest : NotificationTestSupport() {
 		clock.set(at("2026-10-26T09:30:00Z"))
 		assertEquals(0, job.run())
 
-		assertEquals(0, count("select count(*) from notifications"))
+		// newCouple이 만든 COUPLE_LINKED 알림이 있으므로 일정 알림만 센다
+		assertEquals(0, count("select count(*) from notifications where type = 'EVENT_REMINDER'"))
 	}
 
 	@Test
@@ -263,7 +264,8 @@ class EventReminderJobTest : NotificationTestSupport() {
 		}
 
 		assertEquals(0, job.run())
-		assertEquals(0, count("select count(*) from notifications"))
+		// newCouple이 만든 COUPLE_LINKED 알림이 있으므로 일정 알림만 센다
+		assertEquals(0, count("select count(*) from notifications where type = 'EVENT_REMINDER'"))
 		assertEquals(0, push.to(TOKEN_A).size)
 		assertNull(sentAtOfReminder(eventId, couple.a.userId))
 
