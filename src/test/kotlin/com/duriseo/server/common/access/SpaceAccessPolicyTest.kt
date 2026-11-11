@@ -324,6 +324,24 @@ class SpaceAccessPolicyTest : IntegrationTestSupport() {
 		assertEquals(400, error.code.status.value())
 	}
 
+	// ── R-12 ────────────────────────────────────────────
+
+	@Test
+	fun `R-12 알림의 받는 사람이 요청자면 허용한다`() {
+		val (userId, _) = userWithPersonalSpace()
+
+		policy.requireNotificationOwner(userId, userId)
+	}
+
+	@Test
+	fun `R-12 다른 사람의 알림이거나 없는 알림이면 404 NOT_FOUND`() {
+		val (userId, _) = userWithPersonalSpace()
+		val (otherId, _) = userWithPersonalSpace()
+
+		assertApiError(ErrorCode.NOT_FOUND) { policy.requireNotificationOwner(userId, otherId) }
+		assertApiError(ErrorCode.NOT_FOUND) { policy.requireNotificationOwner(userId, null) }
+	}
+
 	// ── R-11 ────────────────────────────────────────────
 
 	@Test

@@ -17,8 +17,8 @@ com.duriseo.server
 ├── event/           일정, 일정 알림
 ├── anniversary/     직접 기념일, 자동 기념일 계산
 ├── memo/            메모, 고정, 즐겨찾기
-├── notification/    알림 행 만들기·삭제 (목록·읽음·설정 API는 단위 6)
-├── push/            FCM, 동기화 신호 (SYNC) — 단위 6에서 만든다
+├── notification/    알림 행 만들기·삭제, 목록·읽음 API (설정 API는 `user/`의 `/me/notification-settings`)
+├── push/            FCM 발송기, 동기화 신호 (SYNC), 도메인 이벤트 리스너 (단위 6)
 ├── storage/         프로필 사진 저장소 (로컬 / S3) — 단위 7에서 만든다
 └── job/             정리 작업, 알림 스케줄러 — 단위 6에서 만든다
 ```
@@ -56,7 +56,7 @@ com.duriseo.server
   - 일정은 잡은 뒤 활성 공간·상대를 다시 읽어 바뀌었으면(그 사이 연결 해제가 커밋됨) `PartnerLockRetry`로 롤백하고 다시 한다. `PartnerLockRetry`는 해제·탈퇴·Kakao 웹훅·일정 만들기가 쓰고, 최대 3번 다시 시도한다. 다 쓴 뒤에도 상대가 바뀌면 순서 밖에서 잠가 드물게 교착 판정 500이 날 수 있다.
   - 일정 알림 설정(`PUT`·`DELETE /events/{id}/reminder`)은 R-01 전에 요청자 행을 `FOR SHARE`로 잡아 해제 정리 뒤에 알림 행이 남지 않게 한다. `PATCH /me`(시간대 재계산)는 첫 줄에서 사용자 행을 `FOR UPDATE`로 잡아 같은 사용자의 일정 알림 설정과 한 줄로 선다.
   - 사용자 행의 순서는 PostgreSQL `uuid` 비교(부호 없는 바이트 순)와 같게 `sortedAsPostgres`(`common/persistence/UuidOrder.kt`)로 맞춘다.
-- **도메인 이벤트:** 쓰는 트랜잭션 안에서 발행하고(`CoupleLinked`, `CoupleUnlinked`, `SpaceUpdated`, `UserWithdrawn`, `EventCreated`·`Updated`·`Deleted`, `AnniversaryCreated`·`Updated`·`Deleted`, `MemoCreated`·`Updated`·`Deleted`), 듣는 쪽은 `@TransactionalEventListener(AFTER_COMMIT)`로 받는다. 지금 듣는 쪽은 Kakao 연결 끊기(`KakaoUnlinkListener`)뿐이고, 푸시·SYNC 리스너는 단위 6에서 만든다. `UserTimeZoneChanged`는 같은 트랜잭션 안에서 종일 일정 알림을 새 시간대로 다시 계산한다(`EventReminderService`).
+- **도메인 이벤트:** 쓰는 트랜잭션 안에서 발행하고(`CoupleLinked`, `CoupleUnlinked`, `SpaceUpdated`, `UserWithdrawn`, `EventCreated`·`Updated`·`Deleted`, `AnniversaryCreated`·`Updated`·`Deleted`, `MemoCreated`·`Updated`·`Deleted`), 듣는 쪽은 `@TransactionalEventListener(AFTER_COMMIT)`로 받는다. 듣는 쪽은 Kakao 연결 끊기(`KakaoUnlinkListener`)와 푸시·SYNC(`push/PushEventListener`)다. 푸시 쪽 리스너는 DB를 새 트랜잭션(`REQUIRES_NEW`, `PushStore`)으로 읽고, 어떤 예외도 밖으로 던지지 않는다(응답에 영향 없음). 탈퇴로 인한 해제는 `CoupleUnlinked`만 듣고 `UserWithdrawn`은 푸시 쪽에서 듣지 않는다. `UserTimeZoneChanged`는 같은 트랜잭션 안에서 종일 일정 알림을 새 시간대로 다시 계산한다(`EventReminderService`).
 - 동기화 신호·푸시는 **커밋이 끝난 뒤** 보낸다 (`@TransactionalEventListener(phase = AFTER_COMMIT)`). 트랜잭션 안에서 외부 호출을 하지 않는다. 카카오 연결 끊기도 커밋 뒤에 한다.
 
 ## 5. 오류 모델

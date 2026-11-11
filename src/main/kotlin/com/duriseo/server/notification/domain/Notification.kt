@@ -12,7 +12,6 @@ import java.util.UUID
 /**
  * 받은 알림 한 건 (ERD 3.1 notifications). 받는 사람마다 한 행이고 푸시와 별개로 먼저 만든다 (DB-07, API.md 7장).
  * `space_id`가 null이면 공간이 지워져도 남는 알림이다(연결·해제 알림). 제목·본문은 만들 때 서버가 채운 값 그대로다.
- * 목록·읽음 API는 단위 6이다.
  */
 @Entity
 @Table(name = "notifications")

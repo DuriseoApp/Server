@@ -6,6 +6,7 @@ import com.duriseo.server.common.api.ErrorCode
 import com.duriseo.server.common.persistence.sortedAsPostgres
 import com.duriseo.server.common.time.nowInSeconds
 import com.duriseo.server.space.application.SpaceService
+import com.duriseo.server.space.application.SpaceUpdated
 import com.duriseo.server.user.domain.AccountType
 import com.duriseo.server.user.domain.NotificationSettings
 import com.duriseo.server.user.domain.NotificationSettingsRepository
@@ -43,7 +44,7 @@ class UserService(
 
 	/**
 	 * `PATCH /me`: 넘어온 값만 바꾼다. 값 검증은 api 계층이 했다 (닉네임은 정리된 값, 시간대는 IANA 이름).
-	 * 시간대가 실제로 바뀌면 `UserTimeZoneChanged`를 발행한다.
+	 * 시간대가 실제로 바뀌면 `UserTimeZoneChanged`를, 닉네임이 실제로 바뀌고 커플 공간이면 `SpaceUpdated`를 발행한다(상대에게 SYNC `SPACE`/`UPDATED`, 단위 6).
 	 * 첫 줄에서 사용자 행을 `FOR UPDATE`로 잠가 같은 사용자의 `PUT /events/{id}/reminder`(`lockShare`)와 한 줄로 세운다:
 	 * 시간대 재계산(리스너)이 미리 읽은 알림 값으로 덮어쓰거나, 방금 만든 알림을 놓치지 않게 한다.
 	 */
@@ -53,11 +54,16 @@ class UserService(
 		val user = locked?.takeIf { it.deletedAt == null }
 			?: throw ApiException(ErrorCode.SESSION_INVALID, "user not found")
 		val previousTimeZone = user.timeZone
+		val nicknameChanged = nickname != null && nickname != user.nickname
 		if (nickname != null) user.nickname = nickname
 		if (timeZone != null) user.timeZone = timeZone
 		user.updatedAt = clock.nowInSeconds()
 		if (timeZone != null && timeZone != previousTimeZone) {
 			events.publishEvent(UserTimeZoneChanged(userId, previousTimeZone, timeZone))
+		}
+		// 닉네임이 바뀌어 성공하고 커플 공간이면 상대에게 SYNC SPACE/UPDATED를 보낸다 (API.md 3.1 PATCH /me, 6장). 같은 값이면 없다 (D-123)
+		if (nicknameChanged && spaceService.isInCoupleSpace(userId)) {
+			policy.activeSpaceIdOf(userId)?.let { events.publishEvent(SpaceUpdated(it, userId)) }
 		}
 	}
 

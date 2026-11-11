@@ -96,6 +96,22 @@
 
 구현하면서 정한 것 중 문서에 없는 것. 문서에 있어야 할 결정이면 여기 적지 말고 작업을 멈추고 보고한다.
 
+묶음 A·B (2026-11-11):
+
+- R-12는 `SpaceAccessPolicy.requireNotificationOwner`로 둔다. 서비스가 "보이는(30일 안) 알림의 받는 사람"을 읽어 넘기고, 없음·남의 것·30일 지남은 같은 404다. 읽음 처리는 `update … where id and read_at is null`이라 이미 읽은 알림은 `read_at`이 그대로다.
+- 커서는 `memo`와 같은 방식(`created_at|id`를 base64url). 목록은 (`created_at`, `id`) 내림차순, id 비교는 PostgreSQL uuid 비교다.
+- `PATCH /me/notification-settings` 본문이 비어 있어도(본문 없음) 200이고 모르는 필드는 무시한다.
+- 닉네임 변경 이벤트는 새 클래스 없이 `SpaceUpdated(spaceId, userId)`를 재사용한다: 닉네임이 **저장값과 다르게** 바뀌고 활성 공간이 커플일 때만 `UserService.updateProfile`이 발행한다(공백을 지운 값이 같으면 없음).
+- `SPACE` 신호의 `id`: `UPDATED`·`UNLINKED`는 공간 ID를 싣고, `LINKED`만 `id`가 없다(API.md 6장이 `LINKED`만 "id 없음"이라 적음). `UNLINKED`의 `id` 유무는 문서에 없어 공간 ID로 정했다. 앱은 어차피 `GET /me`를 다시 읽는다.
+- 탈퇴 해제는 `CoupleUnlinked`에서만 보낸다(알림 ID가 거기에만 있다). `UserWithdrawn`은 푸시 쪽에서 듣지 않는다.
+- FCM data 값은 문자열뿐이라 값이 없는 `body`·`targetType`·`targetId`는 키를 넣지 않는다.
+- 무효 토큰은 `UNREGISTERED`와 `INVALID_ARGUMENT`일 때 `devices` 행을 지운다(형식이 틀린 토큰도 `INVALID_ARGUMENT`로 온다). 그 밖은 로그만(오류 코드만, 토큰 없음).
+- 푸시는 같은 스레드에서 보낸다(요청 응답 전에 FCM 호출이 끝난다). 실패는 삼키지만 지연은 응답에 더해진다. 필요하면 나중에 실행기를 분리한다.
+- Firebase 키가 있는데 읽을 수 없으면(base64·JSON 오류) 서버가 시작하지 않는다. 비어 있으면 건너뛰는 발송기로 뜨고 경고 한 줄.
+- `push/`는 다른 도메인 테이블(devices, auth_sessions, notification_settings, space_members, notifications)을 읽기만 하므로 `SpaceAccessPolicy`처럼 네이티브 쿼리로 읽는다(`PushStore`, 모든 메서드 `REQUIRES_NEW`).
+- 묶음 C가 쓸 공용 함수: `NotificationDispatcher.dispatch(notificationId, withPush = true)` (커밋 뒤에 부른다. 지연 10분 초과는 `withPush = false`).
+- 의존성 `com.google.firebase:firebase-admin:9.5.0`(이 환경에서 Maven을 못 봐 버전은 CI에서 확인).
+
 ## 리뷰 기록
 
 | 회차 | Critical | Major | 비고 |

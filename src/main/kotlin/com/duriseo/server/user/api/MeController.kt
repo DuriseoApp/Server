@@ -4,6 +4,7 @@ import com.duriseo.server.common.web.AuthenticatedUser
 import com.duriseo.server.common.web.CurrentUser
 import com.duriseo.server.user.application.DeviceService
 import com.duriseo.server.user.application.MeService
+import com.duriseo.server.user.application.NotificationSettingsService
 import com.duriseo.server.user.application.UserService
 import com.duriseo.server.user.application.WithdrawalService
 import jakarta.validation.Valid
@@ -22,6 +23,7 @@ class MeController(
 	private val userService: UserService,
 	private val deviceService: DeviceService,
 	private val withdrawalService: WithdrawalService,
+	private val notificationSettingsService: NotificationSettingsService,
 ) {
 
 	/** 내 정보 + 현재 공간 요약 (FR-SET-01). 게스트도 부를 수 있다 */
@@ -48,6 +50,21 @@ class MeController(
 	): ResponseEntity<Void> {
 		deviceService.register(requester.userId, request.fcmToken!!, request.platformOrDefault())
 		return ResponseEntity.noContent().build()
+	}
+
+	/** 알림 설정 조회 (FR-NOTI-02, D-62). 게스트도 부를 수 있다 */
+	@GetMapping("/me/notification-settings")
+	fun getNotificationSettings(@CurrentUser requester: AuthenticatedUser): NotificationSettingsResponse =
+		NotificationSettingsResponse.from(notificationSettingsService.get(requester.userId))
+
+	/** 알림 설정 부분 수정 (FR-NOTI-02, D-145). 없는 필드는 바꾸지 않고 응답은 전체 설정이다 */
+	@PatchMapping("/me/notification-settings")
+	fun updateNotificationSettings(
+		@CurrentUser requester: AuthenticatedUser,
+		@RequestBody(required = false) body: Map<String, Any?>?,
+	): NotificationSettingsResponse {
+		val change = NotificationSettingsRequest.parse(body ?: emptyMap())
+		return NotificationSettingsResponse.from(notificationSettingsService.update(requester.userId, change))
 	}
 
 	/** 탈퇴 (FR-AUTH-06, API.md 4.6). 게스트도 부를 수 있다. 204 */

@@ -85,6 +85,9 @@ abstract class IntegrationTestSupport {
 	protected lateinit var memoChanges: MemoChangeRecorder
 
 	@Autowired
+	protected lateinit var push: RecordingPushSender
+
+	@Autowired
 	private lateinit var context: WebApplicationContext
 
 	protected lateinit var mockMvc: MockMvc
@@ -101,6 +104,7 @@ abstract class IntegrationTestSupport {
 		eventChanges.reset()
 		anniversaryChanges.reset()
 		memoChanges.reset()
+		push.reset()
 		mockMvc = MockMvcBuilders.webAppContextSetup(context).build()
 	}
 
