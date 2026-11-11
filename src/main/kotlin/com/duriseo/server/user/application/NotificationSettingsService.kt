@@ -1,6 +1,7 @@
 package com.duriseo.server.user.application
 
 import com.duriseo.server.common.time.nowInSeconds
+import com.duriseo.server.user.domain.NotificationSettings
 import com.duriseo.server.user.domain.NotificationSettingsRepository
 import jakarta.persistence.EntityManager
 import org.springframework.data.repository.findByIdOrNull
