@@ -1,6 +1,6 @@
 # 단위 6: 알림 — 알림 목록·설정, 푸시(FCM)·동기화 신호, 스케줄러, 정리 작업 (notification)
 
-> 브랜치: `feat/6-notification` · PR: (draft 때 채움) · 상태: 진행 중 (범위 확인 대기)
+> 브랜치: `feat/6-notification` · PR: (draft 때 채움) · 상태: 진행 중 (2026-11-11 범위 승인, 확인 필요 1~5 추천안대로)
 > 기준: PRD v0.12 (FR-NOTI-02·04·05, FR-CAL-05 AC7, 8장, D-39·D-45·D-46·D-73·D-85·D-90·D-92·D-134~D-142), API.md 1.1·2장(R-12·R-16)·3.1(`/me/notification-settings`)·3.5·6장·7장, ERD 3장(notifications, notification_settings, devices, event_reminders)·4.4·DB-03·DB-14·DB-18·DB-19
 > Docs 기준 커밋: DuriseoApp/Docs main `cee0885`
 > 앞 단위: 단위 5 머지됨 (main `2855633`)
