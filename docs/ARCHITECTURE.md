@@ -37,6 +37,7 @@ com.duriseo.server
 - `api` → `application` → `domain`. 거꾸로 의존하지 않는다.
 - 다른 도메인은 그 도메인의 `application` 서비스로만 부른다. 다른 도메인의 리포지토리를 직접 쓰지 않는다.
 - `event`·`anniversary`·`memo`는 `couple`을 알지 않는다. `couple`이 이들의 `*ContentService`(`EventContentService`, `AnniversaryContentService`, `MemoContentService`)를 직접 불러 기록 확인·가져오기·일정 알림 삭제를 한다. `user`는 `couple`·`notification`·`auth`와 이 `*ContentService`를 부른다 (내 정보의 `importCounts`, 탈퇴).
+- **예외: `push/`와 `job/`은 다른 도메인의 테이블(devices, auth_sessions, notification_settings, space_members, notifications, users, spaces, invite_codes 등)을 네이티브 SQL로 읽고 지운다.** 알림·정리 작업은 여러 도메인을 가로지르고, 도메인마다 서비스 메서드를 늘리면 오히려 조건(유효 세션, 30일 경계 등)이 흩어지기 때문이다. `SpaceAccessPolicy`와 같은 방식이다. 이 SQL은 `PushStore`·`CleanupStore`와 각 작업 클래스 안에만 둔다. 사용자·공간을 바꾸는 흐름(게스트 정리의 탈퇴 처리, 알림 행 만들기)은 해당 도메인 서비스(`WithdrawalService`, `NotificationService`)를 부른다.
 - 엔티티를 API 응답으로 그대로 내보내지 않는다. 항상 응답 DTO로 바꾼다.
 - `common`은 어떤 도메인에도 의존하지 않는다.
 

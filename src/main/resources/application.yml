@@ -57,6 +57,11 @@ duriseo:
   firebase:
     project-id: ${FIREBASE_PROJECT_ID:}
     credentials-base64: ${FIREBASE_CREDENTIALS_BASE64:}
+    connect-timeout-millis: 5000 # FCM 연결 제한 시간
+    read-timeout-millis: 10000 # FCM 응답 제한 시간
+  push:
+    threads: 2 # 푸시·동기화 신호 발송 스레드 수
+    queue-capacity: 1000 # 대기 한도. 넘치면 그 신호는 버리고 경고 로그만 남긴다
 
 ---
 # 개발 환경 (AWS 서버의 dev 컨테이너)

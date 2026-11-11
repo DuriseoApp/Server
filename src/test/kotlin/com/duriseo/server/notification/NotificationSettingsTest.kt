@@ -84,4 +84,37 @@ class NotificationSettingsTest : NotificationTestSupport() {
 		clock.advance(Duration.ofMinutes(1))
 		getSettings(a.accessToken).andExpect(jsonPath("$.eventReminder").value(false))
 	}
+
+	@Test
+	fun `FR-NOTI-02 AC2 두 종류를 동시에 바꿔도 둘 다 저장된다`() {
+		val me = startMember()
+
+		repeat(10) {
+			patchSettings(me.accessToken, """{"eventReminder":true,"memoPinned":true}""").andExpect(status().isOk)
+
+			val results = inParallel(
+				listOf(
+					{ statusOf(patchSettings(me.accessToken, """{"eventReminder":false}""")) },
+					{ statusOf(patchSettings(me.accessToken, """{"memoPinned":false}""")) },
+				),
+			)
+
+			assertEquals(listOf(200, 200), results)
+			getSettings(me.accessToken)
+				.andExpect(jsonPath("$.eventReminder").value(false))
+				.andExpect(jsonPath("$.memoPinned").value(false))
+		}
+	}
+
+	@Test
+	fun `FR-NOTI-02 AC1 설정 행이 없어도 동시에 읽으면 모두 200이고 기본값이 켜짐이다`() {
+		val me = startMember()
+		jdbc.update("delete from notification_settings where user_id = ?", me.userId)
+
+		val results = inParallel(List(4) { { statusOf(getSettings(me.accessToken)) } })
+
+		assertEquals(listOf(200, 200, 200, 200), results)
+		assertEquals(1, count("select count(*) from notification_settings where user_id = ?", me.userId))
+		getSettings(me.accessToken).andExpect(jsonPath("$.eventReminder").value(true))
+	}
 }

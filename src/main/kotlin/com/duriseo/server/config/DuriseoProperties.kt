@@ -12,6 +12,7 @@ data class DuriseoProperties(
 	val google: Google = Google(),
 	val kakao: Kakao = Kakao(),
 	val firebase: Firebase = Firebase(),
+	val push: Push = Push(),
 ) {
 	/**
 	 * access 토큰(HS256) 서명 키. 문자열을 UTF-8 바이트 그대로 키로 쓴다 (hex 디코드하지 않음).
@@ -29,8 +30,19 @@ data class DuriseoProperties(
 		override fun toString(): String = "Kakao(appId=$appId, adminKey=***)"
 	}
 
-	/** FCM 발송. credentialsBase64는 서비스 계정 키 JSON을 base64로 인코딩한 값 */
-	data class Firebase(val projectId: String = "", val credentialsBase64: String = "") {
+	/**
+	 * FCM 발송. credentialsBase64는 서비스 계정 키 JSON을 base64로 인코딩한 값.
+	 * 연결·읽기 제한 시간(밀리초)은 FCM이 느려도 발송 스레드가 오래 붙잡히지 않게 짧게 둔다.
+	 */
+	data class Firebase(
+		val projectId: String = "",
+		val credentialsBase64: String = "",
+		val connectTimeoutMillis: Int = 5_000,
+		val readTimeoutMillis: Int = 10_000,
+	) {
 		override fun toString(): String = "Firebase(projectId=$projectId, credentialsBase64=***)"
 	}
+
+	/** 푸시·동기화 신호를 요청 스레드 밖에서 보내는 실행기. 큐가 차면 그 신호는 버린다(재시도 없음, API.md 6장·7장) */
+	data class Push(val threads: Int = 2, val queueCapacity: Int = 1_000)
 }

@@ -17,6 +17,7 @@ import com.duriseo.server.push.application.PushMessage
 import com.duriseo.server.push.application.PushPriority
 import com.duriseo.server.push.application.PushResult
 import com.duriseo.server.push.application.PushSender
+import com.duriseo.server.push.application.PushTaskRunner
 import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Primary
@@ -248,6 +249,11 @@ class TestCoupleConfig {
 	@Bean
 	@Primary
 	fun recordingPushSender() = RecordingPushSender()
+
+	/** 운영의 발송 스레드 풀 대신 호출한 스레드에서 바로 실행한다. 테스트가 결정적이다 */
+	@Bean
+	@Primary
+	fun inlinePushTaskRunner(): PushTaskRunner = PushTaskRunner { it.run() }
 
 	@Bean
 	fun coupleEventRecorder() = CoupleEventRecorder()

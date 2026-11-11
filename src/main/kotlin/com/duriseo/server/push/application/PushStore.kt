@@ -74,11 +74,13 @@ class PushStore(private val em: EntityManager) {
 			.resultList
 			.map { it as UUID }
 
-	/** 무효 토큰 응답을 받은 기기 행을 지운다 (API.md 7장 "푸시 실패", DB devices) */
+	/** 무효 토큰 응답을 받은 기기 행을 지우고 지운 기기 ID를 돌려준다(이미 없으면 null). 로그에는 토큰 대신 이 ID를 쓴다 (API.md 7장 "푸시 실패") */
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
-	fun deleteDeviceByToken(fcmToken: String) {
-		em.createNativeQuery("delete from devices where fcm_token = :token").setParameter("token", fcmToken).executeUpdate()
-	}
+	fun deleteDeviceByToken(fcmToken: String): UUID? =
+		em.createNativeQuery("delete from devices where fcm_token = :token returning id")
+			.setParameter("token", fcmToken)
+			.resultList
+			.firstOrNull() as UUID?
 
 	private fun tokensOf(userId: UUID): List<String> =
 		em.createNativeQuery("select d.fcm_token from devices d where d.user_id = :userId order by d.updated_at, d.id")

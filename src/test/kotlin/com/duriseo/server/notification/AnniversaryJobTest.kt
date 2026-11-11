@@ -2,6 +2,7 @@ package com.duriseo.server.notification
 
 import com.duriseo.server.TestcontainersConfig
 import com.duriseo.server.job.AnniversaryReminderJob
+import com.duriseo.server.job.AnniversaryStartupRunner
 import com.duriseo.server.support.NotificationTestSupport
 import com.duriseo.server.support.TestClockConfig
 import org.junit.jupiter.api.Test
@@ -11,7 +12,9 @@ import org.springframework.context.annotation.Import
 import java.time.Instant
 import java.util.UUID
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
  * 기념일 알림 작업 (API.md 7장 "기념일 알림", D-32·D-55·D-105·D-106·D-138, ERD DB-18, 단위 6 확인 필요 5). 시계는 `2026-10-26T00:00:00Z`(= 서울 오전 9시)로 시작한다.
@@ -232,5 +235,33 @@ class AnniversaryJobTest : NotificationTestSupport() {
 		assertEquals(1, committedCountOf("select count(*) from notifications where user_id = ? and type = 'ANNIVERSARY'", couple.a.userId))
 		assertEquals(1, committedCountOf("select count(*) from notifications where user_id = ? and type = 'ANNIVERSARY'", couple.b.userId))
 		assertEquals(1, push.pushesTo(TOKEN_A).size)
+	}
+
+	@Test
+	fun `D-138 서버가 준비되면 기념일 작업을 한 번 더 돌리고 이미 보낸 알림은 다시 만들지 않는다`() {
+		val couple = newCouple()
+		setStartDate(couple.spaceId, "2026-07-19") // 2026-10-26 = D+100
+		val runner = AnniversaryStartupRunner(job, jobsEnabled = true)
+
+		// 정각 작업이 지나간 뒤(재시작)라도 시작할 때 돌아 그날 알림이 만들어진다
+		assertTrue(runner.onReady())
+		assertEquals(setOf("오늘은 100일이에요"), titles(couple.a.userId))
+		assertEquals(setOf("오늘은 100일이에요"), titles(couple.b.userId))
+
+		// 정각 작업이 또 돌거나 다시 재시작해도 같은 알림은 한 번뿐이다 (DB-18)
+		assertEquals(0, job.run())
+		assertTrue(runner.onReady())
+		assertEquals(1, anniversaryRows(couple.a.userId).size)
+		assertEquals(1, anniversaryRows(couple.b.userId).size)
+	}
+
+	@Test
+	fun `D-138 스케줄러가 꺼져 있으면 서버가 준비돼도 기념일 작업을 돌리지 않는다`() {
+		val couple = newCouple()
+		setStartDate(couple.spaceId, "2026-07-19")
+
+		assertFalse(AnniversaryStartupRunner(job, jobsEnabled = false).onReady())
+
+		assertEquals(0, anniversaryRows(couple.a.userId).size)
 	}
 }

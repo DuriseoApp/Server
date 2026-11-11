@@ -42,6 +42,12 @@ class CleanupStore(
 	 */
 	@Transactional
 	fun eraseGuest(userId: UUID, now: Instant): Boolean {
+		// 사용자 행을 잠근 뒤(users → … 순서, `eraseInTransaction`이 같은 잠금을 다시 잡는다) 대상인지 다시 확인한다.
+		// 잠그기 전의 확인은 그 사이 로그인이 끝난 게스트를 지울 수 있다
+		val locked = em.createNativeQuery("select u.id from users u where u.id = :userId and u.account_type = 'GUEST' and u.deleted_at is null for no key update")
+			.setParameter("userId", userId)
+			.resultList
+		if (locked.isEmpty()) return false
 		val stillTarget = (em.createNativeQuery(
 			"select count(*) from users u where u.id = :userId and u.account_type = 'GUEST' and u.deleted_at is null " +
 				"and not exists ($VALID_SESSION_OF_USER)",
@@ -118,7 +124,9 @@ class CleanupStore(
 	@Transactional
 	fun deleteDevicesWithoutValidSession(now: Instant, limit: Int): Int = update(
 		"delete from devices where id in (select d.id from devices d where not exists " +
-			"(select 1 from auth_sessions s where s.user_id = d.user_id and s.revoked_at is null and s.expires_at > :now) limit :limit)",
+			"(select 1 from auth_sessions s where s.user_id = d.user_id and s.revoked_at is null and s.expires_at > :now) limit :limit) " +
+			// 고른 뒤 로그인이 새 세션을 만들었으면 지우지 않는다: 바깥 DELETE에서도 같은 조건을 다시 본다
+			"and not exists (select 1 from auth_sessions s2 where s2.user_id = devices.user_id and s2.revoked_at is null and s2.expires_at > :now)",
 		"now" to now, "limit" to limit,
 	)
 

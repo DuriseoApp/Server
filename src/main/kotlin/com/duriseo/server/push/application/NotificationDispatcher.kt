@@ -4,6 +4,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import java.time.Clock
 import java.util.UUID
+import java.util.concurrent.RejectedExecutionException
 
 /**
  * 커밋이 끝난 뒤 푸시와 동기화 신호(SYNC)를 보낸다 (API.md 6장, 7장). **트랜잭션 안에서 부르지 않는다.**
@@ -11,11 +12,15 @@ import java.util.UUID
  * 무효 토큰 응답이면 그 기기 행을 지운다. 토큰·키는 로그에 쓰지 않는다.
  *
  * 스케줄러(묶음 C)는 알림 행을 만들어 커밋한 뒤 [dispatch]를 부른다.
+ *
+ * 실제 읽기·전송은 [PushTaskRunner]의 별도 스레드에서 한다: FCM이 느려도 요청 응답과 스케줄러 루프가 기다리지 않는다.
+ * 대기 큐가 차면 그 신호는 버리고 경고 로그만 남긴다(재시도 없음). 커밋 뒤에 부르는 것은 그대로다.
  */
 @Component
 class NotificationDispatcher(
 	private val store: PushStore,
 	private val sender: PushSender,
+	private val runner: PushTaskRunner,
 	private val clock: Clock,
 ) {
 
@@ -58,7 +63,7 @@ class NotificationDispatcher(
 			}
 			if (result == PushResult.INVALID_TOKEN) {
 				try {
-					store.deleteDeviceByToken(token)
+					store.deleteDeviceByToken(token)?.let { log.info("deleted device {} after an invalid-token response", it) }
 				} catch (e: Exception) {
 					log.warn("deleting an invalid device failed ({})", e.javaClass.simpleName)
 				}
@@ -68,9 +73,15 @@ class NotificationDispatcher(
 
 	private fun safely(what: String, block: () -> Unit) {
 		try {
-			block()
-		} catch (e: Exception) {
-			log.warn("push dispatch failed for {} ({})", what, e.javaClass.simpleName)
+			runner.run {
+				try {
+					block()
+				} catch (e: Exception) {
+					log.warn("push dispatch failed for {} ({})", what, e.javaClass.simpleName)
+				}
+			}
+		} catch (e: RejectedExecutionException) {
+			log.warn("push queue is full: dropped {}", what)
 		}
 	}
 }

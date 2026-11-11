@@ -27,6 +27,8 @@ class FcmPushSender(private val messaging: FirebaseMessaging) : PushSender {
 		} catch (e: FirebaseMessagingException) {
 			val code = e.messagingErrorCode
 			if (code == MessagingErrorCode.UNREGISTERED || code == MessagingErrorCode.INVALID_ARGUMENT) {
+				// INVALID_ARGUMENT는 형식이 틀린 토큰이지만 메시지 형식 오류일 수도 있다. 기기 행을 지우는 근거로 남긴다(토큰 없이)
+				if (code == MessagingErrorCode.INVALID_ARGUMENT) log.info("FCM rejected a message with INVALID_ARGUMENT (type={}): the device row will be deleted", message.data["type"])
 				PushResult.INVALID_TOKEN
 			} else {
 				log.warn("FCM send failed (type={}, code={})", message.data["type"], code ?: e.errorCode)

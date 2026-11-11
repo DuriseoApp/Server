@@ -53,3 +53,6 @@
 ## Docs 후속
 
 Docs 레포의 `/prd-sync`로 정해야 할 것이에요. 이 레포에서는 Docs를 고치지 않아요. 단위 1~4에서 모은 4건은 PRD v0.12로 반영돼 지웠어요.
+
+- (단위 6) SPACE `UNLINKED` 신호에 공간 id를 싣는다. API.md 6장은 `LINKED`만 "id 없음"이라 적고 `UNLINKED`는 비어 있다.
+- (단위 6) 보이는 푸시 data에서 값이 null인 키(`body`·`targetType`·`targetId`)는 뺀다. FCM data는 문자열뿐이라 정해야 하는데 API.md 7장이 비어 있다.

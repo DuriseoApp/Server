@@ -106,8 +106,8 @@
 - 탈퇴 해제는 `CoupleUnlinked`에서만 보낸다(알림 ID가 거기에만 있다). `UserWithdrawn`은 푸시 쪽에서 듣지 않는다.
 - FCM data 값은 문자열뿐이라 값이 없는 `body`·`targetType`·`targetId`는 키를 넣지 않는다.
 - 무효 토큰은 `UNREGISTERED`와 `INVALID_ARGUMENT`일 때 `devices` 행을 지운다(형식이 틀린 토큰도 `INVALID_ARGUMENT`로 온다). 그 밖은 로그만(오류 코드만, 토큰 없음).
-- 푸시는 같은 스레드에서 보낸다(요청 응답 전에 FCM 호출이 끝난다). 실패는 삼키지만 지연은 응답에 더해진다. 필요하면 나중에 실행기를 분리한다.
-- Firebase 키가 있는데 읽을 수 없으면(base64·JSON 오류) 서버가 시작하지 않는다. 비어 있으면 건너뛰는 발송기로 뜨고 경고 한 줄.
+- (리뷰 1회차에서 바꿈: 아래 "리뷰 1회차 뒤 바뀐 것") 처음에는 푸시를 같은 스레드에서 보냈다.
+- Firebase 키가 있는데 읽을 수 없으면(base64·JSON 오류) 서버가 시작하지 않는다(리뷰 1회차에서 바꿈). 비어 있으면 건너뛰는 발송기로 뜨고 경고 한 줄.
 - `push/`는 다른 도메인 테이블(devices, auth_sessions, notification_settings, space_members, notifications)을 읽기만 하므로 `SpaceAccessPolicy`처럼 네이티브 쿼리로 읽는다(`PushStore`, 모든 메서드 `REQUIRES_NEW`).
 - 묶음 C가 쓸 공용 함수: `NotificationDispatcher.dispatch(notificationId, withPush = true)` (커밋 뒤에 부른다. 지연 10분 초과는 `withPush = false`).
 - 의존성 `com.google.firebase:firebase-admin:9.5.0`(이 환경에서 Maven을 못 봐 버전은 CI에서 확인).
@@ -124,10 +124,22 @@
 - 게스트 정리는 사용자마다 `CleanupStore.eraseGuest`(트랜잭션 하나)에서 유효 세션이 아직 없는지 다시 확인한 뒤 `eraseInTransaction(unlinkFromKakao = false)`를 부른다. 게스트는 커플이 될 수 없어 `PartnerLockRetry` 없이 부른다.
 - 새 마이그레이션 없음: 1분 작업은 `ix_event_reminders_unsent_fire_at`(부분), 알림 목록은 `ix_notifications_user_created`, 공간 삭제는 `ix_spaces_purge_at`을 쓴다. 하루 한 번 도는 정리(알림 `created_at`, 세션 `expires_at`, 시도 기록 `attempted_at`)와 매시 도는 `users.time_zone` 고유값 조회는 인덱스 없는 훑기다. 데이터가 커져 느려지면 그때 새 버전으로 인덱스를 더한다.
 
+리뷰 1회차 뒤 바뀐 것:
+
+- `PATCH /me/notification-settings`는 행을 `FOR UPDATE`로 잠근 뒤 읽고 고친다. 행이 없으면 `insert … on conflict do nothing`으로 만든 뒤 읽는다(`GET`도 같다). 동시 PATCH 테스트를 더했다.
+- 푸시·SYNC 발송은 `PushTaskRunner`(운영: `QueuedPushTaskRunner`, 스레드 `duriseo.push.threads`=2, 대기 `queue-capacity`=1000, 데몬 스레드)로 요청·스케줄러 스레드 밖에서 한다. 큐가 차면 그 신호는 버리고 warn 로그(재시도 없음). 커밋 뒤에 부르는 것은 그대로고, 테스트는 `@Primary` 동기 실행기로 바꾼다.
+- FCM 제한 시간: 연결 `duriseo.firebase.connect-timeout-millis`=5000, 읽기 `read-timeout-millis`=10000(`FirebaseOptions`).
+- **한계(확인 못 함):** firebase-admin 9.x는 `FirebaseMessaging.send`가 500·503 같은 일시 오류와 IO 오류에 내부 재시도 설정(`RetryConfig`)으로 몇 번 다시 시도하는 것으로 알고 있고, 공개 `FirebaseOptions`에는 이를 끄는 설정이 없다. 이 환경에서 jar를 볼 수 없어 CI·로컬에서 확인하지 못했다. 그래서 "재시도하지 않는다"(API.md 6·7장)는 **우리 쪽 재시도 없음**을 뜻하고 SDK 안의 재시도는 못 끈다. 발송이 별도 스레드·제한 시간 안이라 요청에는 영향이 없다. 정말 끌 필요가 있으면 단위 밖 과제(예: 사용자 정의 `HttpTransport`).
+- Firebase 키가 있는데 읽을 수 없으면 서버를 죽이지 않고 error 로그(예외 종류만, 키 내용 없음) + 건너뛰는 발송기로 뜬다(앞 결정 "시작하지 않는다"를 바꿈). 배포 스크립트의 자동 되돌리기가 같은 환경변수를 써서 복구할 수 없기 때문이다. 빈 키·base64 아님·JSON 아님 테스트(`PushInfraTest`).
+- 기념일 알림: `AnniversaryStartupRunner`가 `ApplicationReadyEvent`에서 `run()`을 한 번 더 돈다(`duriseo.jobs.enabled`일 때만, 중복은 DB-18 규칙). 정각 작업과 겹쳐도 같은 알림은 한 번이다.
+- 무효 토큰 삭제는 `delete … returning id`로 기기 ID를 받아 info 로그(토큰 없이). `INVALID_ARGUMENT`는 별도 info 로그.
+- 정리 작업: devices 삭제 바깥 DELETE에도 "유효 세션 없음"을 다시 넣었다. 게스트 정리는 사용자 행을 `FOR NO KEY UPDATE`로 잠근 뒤 대상(게스트·미탈퇴·유효 세션 없음)을 다시 확인한다(게스트는 커플 상대가 없어 `eraseInTransaction`의 상대 잠금 순서와 어긋나지 않는다).
+
 ## 리뷰 기록
 
 | 회차 | Critical | Major | 비고 |
 | --- | --- | --- | --- |
+| 1 (opus) | 0 | 4 | 알림 설정 PATCH 변경 손실(행 잠금), FCM 동기 호출·타임아웃(별도 실행기·제한 시간), Firebase 키 오류로 서버가 안 뜸(건너뛰는 발송기로 대체), 기념일 알림이 재시작 때 빠짐(시작 때 한 번 더). Minor 반영: devices 삭제 조건 재확인, 게스트 정리 잠금 뒤 재확인, INVALID_ARGUMENT info 로그, ARCHITECTURE 예외 문구, PLAN Docs 후속 |
 
 ## 남은 일
 
