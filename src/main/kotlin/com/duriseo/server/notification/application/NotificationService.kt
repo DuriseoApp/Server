@@ -13,8 +13,8 @@ import java.util.UUID
 
 /**
  * 알림 행을 만든다 (API.md 7장 "받는 사람마다 `notifications` 행을 먼저 만든다", ERD DB-07).
- * 푸시와 동기화 신호 `NOTIFICATION`은 단위 6이 커밋 뒤에 보낸다. 부른 쪽의 트랜잭션 안에서 만든다.
- * 연결·해제 알림(단위 2), 상대 일정 추가 알림(단위 3), 상대 메모 추가·메모 고정 알림(단위 5)을 만든다. 목록·읽음·설정 API와 일정·기념일 알림 작업은 단위 6이다.
+ * 푸시와 동기화 신호 `NOTIFICATION`은 커밋 뒤 `push/NotificationDispatcher`가 보낸다. 부른 쪽의 트랜잭션 안에서 만든다.
+ * 연결·해제 알림(단위 2), 상대 일정 추가 알림(단위 3), 상대 메모 추가·메모 고정 알림(단위 5)을 만든다. 목록·읽음은 `NotificationQueryService`, 일정·기념일 알림 작업(`job/`)은 이 서비스로 행을 만든다.
  */
 @Service
 class NotificationService(private val notifications: NotificationRepository) {
@@ -146,6 +146,44 @@ class NotificationService(private val notifications: NotificationRepository) {
 		)
 		notification.spaceId = spaceId
 		notification.targetId = memoId
+		return notifications.save(notification).requireId()
+	}
+
+	/**
+	 * 일정 알림 (API.md 7장 "일정 알림", FR-CAL-05, D-90). 받는 사람 = 알림 주인. `target_type` `EVENT`, `target_id` 일정 ID, `space_id` 일정의 공간.
+	 * 제목은 일정 제목, 본문은 [body](D-139, `EventReminderTexts`)다. `event_reminder` 설정과 관계없이 행은 만든다. 만든 알림 ID를 돌려준다.
+	 */
+	@Transactional(propagation = Propagation.MANDATORY)
+	fun createEventReminder(recipientUserId: UUID, eventTitle: String, body: String, spaceId: UUID, eventId: UUID, now: Instant): UUID {
+		val notification = Notification(
+			userId = recipientUserId,
+			type = NotificationType.EVENT_REMINDER,
+			title = eventTitle,
+			body = body,
+			targetType = NotificationTargetType.EVENT,
+			now = now,
+		)
+		notification.spaceId = spaceId
+		notification.targetId = eventId
+		return notifications.save(notification).requireId()
+	}
+
+	/**
+	 * 기념일 알림 (API.md 7장 "기념일 알림", D-138). `target_type` `ANNIVERSARY`, `target_id`는 자동 기념일이면 null, 직접 기념일이면 기념일 ID.
+	 * `anniversary` 설정과 관계없이 행은 만든다. 같은 날 중복은 부른 쪽이 거른다(DB-18). 만든 알림 ID를 돌려준다.
+	 */
+	@Transactional(propagation = Propagation.MANDATORY)
+	fun createAnniversary(recipientUserId: UUID, name: String, body: String, spaceId: UUID, anniversaryId: UUID?, now: Instant): UUID {
+		val notification = Notification(
+			userId = recipientUserId,
+			type = NotificationType.ANNIVERSARY,
+			title = NotificationTexts.anniversaryTitle(name),
+			body = body,
+			targetType = NotificationTargetType.ANNIVERSARY,
+			now = now,
+		)
+		notification.spaceId = spaceId
+		notification.targetId = anniversaryId
 		return notifications.save(notification).requireId()
 	}
 

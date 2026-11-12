@@ -161,6 +161,14 @@ class SpaceAccessPolicy(private val em: EntityManager) {
 		if (!sharesActiveSpace) throw notFound()
 	}
 
+	/**
+	 * R-12: 알림 조회·읽음 처리는 `notifications.user_id` = 요청자일 때만. 아니면 404 `NOT_FOUND`. 알림은 공간이 아니라 받은 사람 기준이라 R-01 대신 이 규칙만 쓴다.
+	 * [ownerUserId]는 알림의 받는 사람이고, 알림이 없거나(30일이 지나 보이지 않는 것 포함) 못 찾았으면 null이다. 없는 알림과 남의 알림은 같은 응답이다.
+	 */
+	fun requireNotificationOwner(requesterId: UUID, ownerUserId: UUID?) {
+		if (ownerUserId == null || ownerUserId != requesterId) throw notFound()
+	}
+
 	/** R-14: `POST /auth/link`, `POST /auth/switch`는 GUEST만. 회원이면 403 `GUEST_ONLY`. 소셜 토큰 검증보다 먼저 부른다 */
 	fun requireGuest(userId: UUID) {
 		if (accountTypeOf(userId) != GUEST_TYPE) throw ApiException(ErrorCode.GUEST_ONLY, "guests only")

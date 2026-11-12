@@ -30,6 +30,8 @@ dependencies {
 	implementation("tools.jackson.module:jackson-module-kotlin")
 	// access 토큰(HS256) 발급·검증, 2부의 Google ID 토큰 검증. Jackson에 의존하지 않는다 (Boot 4의 Jackson 3와 충돌 없음)
 	implementation("com.nimbusds:nimbus-jose-jwt:10.0.2")
+	// FCM 푸시·동기화 신호 (API.md 6장, 7장). 의존하는 Jackson 2(com.fasterxml)는 Boot 4의 Jackson 3(tools.jackson)와 패키지가 달라 함께 있어도 된다. CI에서 충돌이 나면 제외 규칙을 더한다
+	implementation("com.google.firebase:firebase-admin:9.5.0")
 	runtimeOnly("org.postgresql:postgresql")
 	testImplementation("org.springframework.boot:spring-boot-starter-data-jpa-test")
 	testImplementation("org.springframework.boot:spring-boot-starter-flyway-test")

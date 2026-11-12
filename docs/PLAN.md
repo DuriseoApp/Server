@@ -2,7 +2,7 @@
 
 작업 단위 하나가 PR 하나예요. 단위가 끝나면 이 표의 상태를 같은 PR에서 바꿔요. 화면·기능 내용은 Docs를 보고, 여기에는 순서와 범위만 적어요. 기준 Docs는 PRD v0.12예요.
 
-**지금 위치:** 키트 1~3과 단위 1~4가 머지됐고 개발 서버(dev)에 배포돼 있어요 (main `e0a7611`). 단위 5(메모)는 PR #11로 머지 대기예요. 끝난 단위의 진행 기록은 `docs/progress/archive/`에 있어요.
+**지금 위치:** 키트 1~3과 단위 1~5가 머지됐고 개발 서버(dev)에 배포돼 있어요 (main `2855633`). 단위 6(알림)은 PR #12로 머지 대기예요. 끝난 단위의 진행 기록은 `docs/progress/archive/`에 있어요.
 
 상태: 완료 = 머지됨 · PR 완료 = PR을 열었고 머지 대기 · 대기 = 아직 시작 안 함.
 
@@ -16,8 +16,8 @@
 | 배포 1 | 단위 2까지 AWS dev에 배포해 두 기기로 연결 확인. 사용자가 `docs/SETUP.md` 3장(AWS·DuckDNS·GitHub 환경)을 마쳐야 한다 | 키트 3 | dev 배포됨. 두 기기 연결 확인은 기록 없음 (사용자 확인) |
 | 3 | 캘린더: 일정, 일정 알림, 날짜 범위. 상대에게 `PARTNER_CREATED` 알림 행 | FR-CAL, API 3.3, R-02·R-07·R-10·R-13·R-15 | 완료 (PR #8) |
 | 4 | 기념일: 자동 기념일 계산, 직접 기념일, 목록 2종, 캘린더용 범위 조회 | FR-ANNIV, API 3.3, R-05 | 완료 (PR #9) |
-| 5 | 메모: 메모, 날짜, 고정, 즐겨찾기 | FR-MEMO, API 3.4, R-03·R-04·R-06 | PR 완료 (PR #11) |
-| 6 | 알림: 알림 목록, 알림 설정, 푸시(FCM)·동기화 신호, 스케줄러(일정·기념일 알림), 정리 작업 | FR-NOTI, API 3.5·6장·7장, ERD 4.4 | 대기 |
+| 5 | 메모: 메모, 날짜, 고정, 즐겨찾기 | FR-MEMO, API 3.4, R-03·R-04·R-06 | 완료 |
+| 6 | 알림: 알림 목록, 알림 설정, 푸시(FCM)·동기화 신호, 스케줄러(일정·기념일 알림), 정리 작업 | FR-NOTI, API 3.5·6장·7장, ERD 4.4 | PR 완료 (PR #12) |
 | 7 | 프로필 사진: 업로드·재인코딩·S3 | FR-AUTH-07, API 8장, NFR-FILE-01 | 대기 |
 
 ## 앞 단위에서 넘어온 일
@@ -39,7 +39,8 @@
 
 ### 단위 7 (프로필 사진)
 
-- `UserWithdrawn.profileImageKey`로 탈퇴 때 사진 파일을 지운다. 어떤 사용자도 참조하지 않는 파일 정리는 단위 6의 정리 작업과 겹치니 함께 정한다.
+- `UserWithdrawn.profileImageKey`로 탈퇴 때 사진 파일을 지운다. 어떤 사용자도 참조하지 않는 파일 정리는 단위 6의 정리 작업(`job/CleanupJob`)에 8단계로 더한다(자리 주석 있음, 단위 6 확인 필요 4).
+- 사진 변경(`PUT·DELETE /me/profile-image`) 성공 때 커플 공간 상대에게 SYNC `SPACE`/`UPDATED` (단위 6의 닉네임 변경과 같은 `SpaceUpdated` 발행).
 - `GET /me`·`GET /space`는 `hasProfileImage`(사진이 있는지)만 주고, 이미지는 `GET /users/{id}/profile-image`(API.md 8장)로 받는다. 이 경로와 업로드·삭제를 붙인다.
 
 ### 단위와 상관없이 (사람이 할 일, 정리)
@@ -47,8 +48,12 @@
 - 사용자: Parameter Store `/duriseo/secret/KAKAO_ADMIN_KEY` 등록 확인 (`docs/SETUP.md` 3.5). 비어 있으면 탈퇴 때 Kakao 연결 끊기를 건너뛰고 Kakao 웹훅이 모두 401이 된다.
 - 사용자: Kakao Developers 동의항목 "닉네임" 켜기 (꺼져 있으면 Kakao 가입 닉네임이 모두 "사용자"가 된다, API.md 4.2).
 - 사용자: Kakao Developers 앱 › 웹훅 › 연결 해제 웹훅에 dev·prod 주소 등록 (`docs/DEPLOY.md` 9장).
+- 정리 검토: 날짜 범위 조회 검사·잘라내기를 `GET /events`·`GET /anniversaries`도 `common/api/DateRangeQuery`로 모은다 (지금 같은 규칙 복사본 3곳, 단위 5 리뷰).
 - 정리 검토: `auth`와 `user` 패키지가 서로 참조한다 (`SocialAuthService`가 `user` 서비스를, `WithdrawalService`가 `SessionService`를 부른다). 방향을 정리할지 검토한다.
 
 ## Docs 후속
 
 Docs 레포의 `/prd-sync`로 정해야 할 것이에요. 이 레포에서는 Docs를 고치지 않아요. 단위 1~4에서 모은 4건은 PRD v0.12로 반영돼 지웠어요.
+
+- (단위 6) SPACE `UNLINKED` 신호에 공간 id를 싣는다. API.md 6장은 `LINKED`만 "id 없음"이라 적고 `UNLINKED`는 비어 있다.
+- (단위 6) 보이는 푸시 data에서 값이 null인 키(`body`·`targetType`·`targetId`)는 뺀다. FCM data는 문자열뿐이라 정해야 하는데 API.md 7장이 비어 있다.
