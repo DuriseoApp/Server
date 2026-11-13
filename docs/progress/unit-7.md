@@ -1,6 +1,6 @@
 # 단위 7: 프로필 사진 — 업로드·재인코딩·저장소 (user, storage)
 
-> 브랜치: `feat/7-profile-image` · PR: (draft 때 채움) · 상태: 진행 중 (범위 확인 대기)
+> 브랜치: `feat/7-profile-image` · PR: (draft 때 채움) · 상태: 진행 중 (2026-11-13 범위 승인, 확인 필요 1~4 추천안대로)
 > 기준: PRD v0.12 (FR-AUTH-07 AC3·AC5·AC7, NFR-FILE-01, NFR-PRIV-02, D-33·D-147·D-153), API.md 2장 R-11·3.1(`/me/profile-image`, `/users/{id}/profile-image`, `Me`·`MePartner`)·3.2(`SpaceMember`)·5장(413·415)·6장·8장, ERD `users.profile_image_key`·4.3·4.4
 > Docs 기준 커밋: DuriseoApp/Docs main `cee0885`
 > 앞 단위: 단위 6 머지됨 (main `d619d1b`)
