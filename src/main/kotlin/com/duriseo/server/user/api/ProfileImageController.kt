@@ -8,7 +8,7 @@ import com.duriseo.server.common.api.FieldErrorReason
 import com.duriseo.server.common.web.AuthenticatedUser
 import com.duriseo.server.common.web.CurrentUser
 import com.duriseo.server.user.application.ProfileImageService
-import org.springframework.core.io.InputStreamResource
+import jakarta.servlet.http.HttpServletResponse
 import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
@@ -37,7 +37,7 @@ class ProfileImageController(private val profileImageService: ProfileImageServic
 				FieldErrorDetails(listOf(FieldError("file", FieldErrorReason.REQUIRED))),
 			)
 		}
-		profileImageService.upload(requester.userId, file.size) { file.bytes }
+		profileImageService.upload(requester.userId, file.size) { file.inputStream }
 		return ResponseEntity.noContent().build()
 	}
 
@@ -48,19 +48,23 @@ class ProfileImageController(private val profileImageService: ProfileImageServic
 		return ResponseEntity.noContent().build()
 	}
 
-	/** 조회 (R-11). `image/jpeg`를 그대로 흘려 보낸다. 사진이 없거나 권한이 없으면 404 `NOT_FOUND` */
+	/**
+	 * 조회 (R-11). `image/jpeg`를 응답 출력에 직접 흘려 보낸다. 사진이 없거나 권한이 없으면 404 `NOT_FOUND`(쓰기 전에 던진다).
+	 * 리소스 변환기를 거치지 않아 `Range`·`Accept-Ranges` 처리와 `Accept` 협상이 끼지 않는다.
+	 */
 	@GetMapping("/users/{id}/profile-image")
-	fun get(@CurrentUser requester: AuthenticatedUser, @PathVariable("id") id: String): ResponseEntity<InputStreamResource> {
+	fun get(@CurrentUser requester: AuthenticatedUser, @PathVariable("id") id: String, response: HttpServletResponse) {
 		val userId = try {
 			UUID.fromString(id)
 		} catch (e: IllegalArgumentException) {
 			throw ApiException(ErrorCode.NOT_FOUND, "not found")
 		}
-		val stream = profileImageService.open(requester.userId, userId)
-		return ResponseEntity.ok()
-			.contentType(MediaType.IMAGE_JPEG)
+		profileImageService.open(requester.userId, userId).use { stream ->
+			response.status = HttpServletResponse.SC_OK
+			response.contentType = MediaType.IMAGE_JPEG_VALUE
 			// 키(uuid)가 바뀔 때마다 앱이 `?v=<version>`으로 새로 받는다
-			.header(HttpHeaders.CACHE_CONTROL, "private, max-age=31536000, immutable")
-			.body(InputStreamResource(stream))
+			response.setHeader(HttpHeaders.CACHE_CONTROL, "private, max-age=31536000, immutable")
+			stream.transferTo(response.outputStream)
+		}
 	}
 }

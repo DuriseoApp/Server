@@ -52,7 +52,7 @@ class LocalDiskProfileImageStorageTest {
 	}
 
 	@Test
-	fun `ERD 4_4 목록은 접두어 아래 객체를 키와 마지막 수정 시각으로 돌려주고 임시 파일은 건너뛴다`() {
+	fun `ERD 4_4 목록은 접두어 아래 객체를 키와 마지막 수정 시각으로 돌려주고 쓰다 만 임시 파일도 포함한다`() {
 		val storage = LocalDiskProfileImageStorage(dir)
 		val first = key()
 		val second = ProfileImageKeys.objectKey(UUID.randomUUID(), UUID.randomUUID().toString())
@@ -60,14 +60,16 @@ class LocalDiskProfileImageStorageTest {
 		storage.put(second, byteArrayOf(2))
 		val old = Instant.parse("2026-01-01T00:00:00Z")
 		Files.setLastModifiedTime(dir.resolve(first), FileTime.from(old))
-		Files.write(dir.resolve(first).resolveSibling(".half-written.tmp"), byteArrayOf(9))
+		val temp = dir.resolve(first).resolveSibling(".half-written.tmp")
+		Files.write(temp, byteArrayOf(9))
+		val tempKey = dir.relativize(temp).joinToString("/")
 
 		val all = listed(storage)
 
-		assertEquals(setOf(first, second), all.map { it.key }.toSet())
+		assertEquals(setOf(first, second, tempKey), all.map { it.key }.toSet())
 		assertEquals(old, all.single { it.key == first }.lastModified)
 		assertTrue(all.single { it.key == second }.lastModified.isAfter(Instant.now().minus(Duration.ofMinutes(5))))
-		assertEquals(listOf(first), listed(storage, "profile/$userId/").map { it.key })
+		assertEquals(setOf(first, tempKey), listed(storage, "profile/$userId/").map { it.key }.toSet())
 	}
 
 	@Test

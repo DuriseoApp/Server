@@ -1,6 +1,8 @@
 package com.duriseo.server.job
 
 import com.duriseo.server.common.api.ApiException
+import com.duriseo.server.config.DuriseoProperties
+import com.duriseo.server.config.DuriseoProperties.StorageType
 import com.duriseo.server.storage.ProfileImageKeys
 import com.duriseo.server.storage.ProfileImageStorage
 import org.slf4j.LoggerFactory
@@ -27,6 +29,7 @@ import java.util.UUID
 class CleanupJob(
 	private val store: CleanupStore,
 	private val profileImages: ProfileImageStorage,
+	private val properties: DuriseoProperties,
 	private val clock: Clock,
 ) {
 
@@ -87,6 +90,11 @@ class CleanupJob(
 	 * 파일마다 실패는 로그만 남기고 다음으로 간다.
 	 */
 	private fun cleanProfileImages() {
+		// 저장소가 S3면 prod 앱만 돈다: 다른 환경이 운영 버킷을 가리켜도 운영 사진을 지우지 않게 하는 보호 장치다
+		if (properties.storage.type == StorageType.S3 && !properties.storage.cleanupEnabled) {
+			log.info("profile image cleanup is skipped: duriseo.storage.cleanup-enabled is false for the S3 storage")
+			return
+		}
 		val inUse = store.profileImageObjectKeysInUse()
 		val cutoff = clock.instant().minus(PROFILE_IMAGE_GRACE)
 		profileImages.list(ProfileImageKeys.PREFIX) { obj ->

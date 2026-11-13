@@ -57,10 +57,15 @@ data class DuriseoProperties(
 		val localDir: String = "./data/profile-images",
 		val s3Bucket: String = "",
 		val s3Region: String = "ap-northeast-2",
+		/**
+		 * 저장소가 `s3`일 때 정리 작업 8단계(미참조 파일 삭제)를 돌릴지. 기본 false다: 다른 환경(맥 등)이 운영 버킷을 가리켜도 운영 사진을 지우지 않게,
+		 * prod 앱만 켠다(`deploy.sh`). `local`일 때는 이 값과 관계없이 돈다.
+		 */
+		val cleanupEnabled: Boolean = false,
 	)
 
 	enum class StorageType { LOCAL, S3 }
 
-	/** 프로필 사진 재인코딩 설정. 처리 동시 실행 수는 메모리(앱 컨테이너 512~640MB) 때문에 작게 둔다 */
-	data class Image(val jpegQuality: Float = 0.85f, val maxConcurrentProcessing: Int = 2)
+	/** 프로필 사진 재인코딩 설정. 처리 동시 실행 수는 메모리(앱 컨테이너 512~640MB, progressive JPEG 디코드는 네이티브 메모리를 크게 쓴다) 때문에 1로 둔다 */
+	data class Image(val jpegQuality: Float = 0.85f, val maxConcurrentProcessing: Int = 1)
 }

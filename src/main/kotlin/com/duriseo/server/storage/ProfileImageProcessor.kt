@@ -1,8 +1,9 @@
 package com.duriseo.server.storage
 
-import com.drew.imaging.ImageMetadataReader
+import com.drew.imaging.jpeg.JpegMetadataReader
 import com.drew.metadata.exif.ExifDirectoryBase
 import com.drew.metadata.exif.ExifIFD0Directory
+import com.drew.metadata.exif.ExifReader
 import com.duriseo.server.common.api.ApiException
 import com.duriseo.server.common.api.ErrorCode
 import com.duriseo.server.config.DuriseoProperties
@@ -14,13 +15,13 @@ import java.awt.image.BufferedImage
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.io.InputStream
 import java.util.concurrent.Semaphore
 import javax.imageio.IIOImage
 import javax.imageio.ImageIO
 import javax.imageio.ImageReader
 import javax.imageio.ImageWriteParam
 import javax.imageio.stream.ImageInputStream
-import javax.imageio.stream.MemoryCacheImageInputStream
 import javax.imageio.stream.MemoryCacheImageOutputStream
 import kotlin.math.max
 import kotlin.math.min
@@ -33,7 +34,10 @@ import kotlin.math.roundToInt
  * 형식은 Content-Type·확장자가 아니라 실제 디코더가 읽을 수 있는지로 정한다(JPEG·PNG가 아니거나 못 읽으면 415).
  *
  * 메모리: 25MP 전체 디코드는 100MB가 넘으므로 헤더로 크기만 읽고, 디코드는 `ImageReader`의 source subsampling으로 긴 변이
- * 512px 이상 1024px 미만이 되는 정수 비율로 줄여 읽는다. 처리 동시 실행 수는 [DuriseoProperties.Image.maxConcurrentProcessing]로 제한한다.
+ * 512px 이상 1024px 미만이 되는 정수 비율로 줄여 읽는다. 처리 동시 실행 수는 [DuriseoProperties.Image.maxConcurrentProcessing](기본 1)로 제한한다.
+ * 원본은 **자리를 얻은 뒤에** 입력 스트림(multipart가 디스크에 둔 파일)에서 바로 읽고, 힙에 바이트 배열로 올리지 않는다
+ * (`ImageIO`가 디스크 캐시 `FileCacheImageInputStream`을 쓴다). progressive JPEG는 subsampling해도 디코더가 전체 계수 버퍼를 네이티브 메모리로 잡을 수
+ * 있다(25MP 4:4:4 약 150MB). 그래서 동시 처리 기본값이 1이다 (docs/SETUP.md "프로필 사진 메모리").
  * 트랜잭션과 무관하다: 부르는 쪽이 트랜잭션 밖에서 부른다.
  */
 @Component
@@ -48,12 +52,18 @@ class ProfileImageProcessor(properties: DuriseoProperties) {
 	}
 
 	/** [source]를 JPEG(긴 변 512px 이하, 메타 없음)로 돌려준다. 10MB·25MP 초과는 413 `IMAGE_TOO_LARGE`, JPEG·PNG가 아니거나 디코드 실패는 415 `IMAGE_TYPE_NOT_ALLOWED` */
-	fun process(source: ByteArray): ByteArray {
-		requireWithinSizeLimit(source.size.toLong())
-		if (source.isEmpty()) throw notAllowed("image is empty")
+	fun process(source: ByteArray): ByteArray = process(source.size.toLong()) { ByteArrayInputStream(source) }
+
+	/**
+	 * [open]이 원본을 읽는 새 입력 스트림을 돌려준다(여러 번 부를 수 있어야 한다. 예: `MultipartFile.getInputStream`). [size]는 원본 바이트 수다.
+	 * 크기 검사는 자리를 기다리기 전에 하고, 원본은 자리를 얻은 뒤에야 읽는다.
+	 */
+	fun process(size: Long, open: () -> InputStream): ByteArray {
+		requireWithinSizeLimit(size)
+		if (size <= 0) throw notAllowed("image is empty")
 		permits.acquire()
 		try {
-			return reencode(source)
+			return reencode(open)
 		} finally {
 			permits.release()
 		}
@@ -64,38 +74,43 @@ class ProfileImageProcessor(properties: DuriseoProperties) {
 		if (size > MAX_BYTES) throw ApiException(ErrorCode.IMAGE_TOO_LARGE, "image is larger than 10MB")
 	}
 
-	private fun reencode(source: ByteArray): ByteArray =
-		MemoryCacheImageInputStream(ByteArrayInputStream(source)).use { input ->
-			val reader = findReader(input) ?: throw notAllowed("not a JPEG or PNG image")
-			try {
-				reader.setInput(input, false, true) // 헤더를 읽은 뒤 이어서 디코드한다. 메타데이터는 읽지 않는다
-				val (width, height) = try {
-					reader.getWidth(0) to reader.getHeight(0)
-				} catch (e: IOException) {
-					throw notAllowed("image header is unreadable")
-				} catch (e: RuntimeException) {
-					throw notAllowed("image header is unreadable")
-				}
-				if (width <= 0 || height <= 0) throw notAllowed("image has no size")
-				// 디코드하기 전에 픽셀 수를 본다
-				if (width.toLong() * height > MAX_PIXELS) throw ApiException(ErrorCode.IMAGE_TOO_LARGE, "image has more than 25MP")
-
-				val step = max(1, max(width, height) / TARGET_SIDE)
-				val param = reader.defaultReadParam
-				param.setSourceSubsampling(step, step, 0, 0)
-				val decoded = try {
-					reader.read(0, param)
-				} catch (e: IOException) {
-					throw notAllowed("image cannot be decoded")
-				} catch (e: RuntimeException) {
-					throw notAllowed("image cannot be decoded")
-				}
-				val orientation = if (isJpeg(reader)) orientationOf(source) else NORMAL_ORIENTATION
-				encodeJpeg(render(decoded, orientation))
-			} finally {
-				reader.dispose()
-			}
+	private fun reencode(open: () -> InputStream): ByteArray =
+		open().use { raw ->
+			val input = ImageIO.createImageInputStream(raw) ?: throw notAllowed("not a JPEG or PNG image")
+			input.use { decodeAndEncode(it, open) }
 		}
+
+	private fun decodeAndEncode(input: ImageInputStream, open: () -> InputStream): ByteArray {
+		val reader = findReader(input) ?: throw notAllowed("not a JPEG or PNG image")
+		return try {
+			reader.setInput(input, false, true) // 헤더를 읽은 뒤 이어서 디코드한다. 메타데이터는 읽지 않는다
+			val (width, height) = try {
+				reader.getWidth(0) to reader.getHeight(0)
+			} catch (e: IOException) {
+				throw notAllowed("image header is unreadable")
+			} catch (e: RuntimeException) {
+				throw notAllowed("image header is unreadable")
+			}
+			if (width <= 0 || height <= 0) throw notAllowed("image has no size")
+			// 디코드하기 전에 픽셀 수를 본다
+			if (width.toLong() * height > MAX_PIXELS) throw ApiException(ErrorCode.IMAGE_TOO_LARGE, "image has more than 25MP")
+
+			val step = max(1, max(width, height) / TARGET_SIDE)
+			val param = reader.defaultReadParam
+			param.setSourceSubsampling(step, step, 0, 0)
+			val decoded = try {
+				reader.read(0, param)
+			} catch (e: IOException) {
+				throw notAllowed("image cannot be decoded")
+			} catch (e: RuntimeException) {
+				throw notAllowed("image cannot be decoded")
+			}
+			val orientation = if (isJpeg(reader)) orientationOf(open) else NORMAL_ORIENTATION
+			encodeJpeg(render(decoded, orientation))
+		} finally {
+			reader.dispose()
+		}
+	}
 
 	/** JPEG·PNG를 읽을 수 있는 디코더. 없으면 null (GIF·WebP·HEIC·깨진 파일 등) */
 	private fun findReader(input: ImageInputStream): ImageReader? {
@@ -113,9 +128,10 @@ class ProfileImageProcessor(properties: DuriseoProperties) {
 		reader.originatingProvider?.formatNames?.any { it.lowercase() in JPEG_FORMATS } == true
 
 	/** EXIF Orientation(1~8). 없거나 읽을 수 없으면 1 (회전 없음) */
-	private fun orientationOf(source: ByteArray): Int =
+	private fun orientationOf(open: () -> InputStream): Int =
 		try {
-			val directory = ImageMetadataReader.readMetadata(ByteArrayInputStream(source))
+			// EXIF 조각만 읽는다 (XMP·ICC 등 다른 메타데이터는 읽지 않는다)
+			val directory = open().use { JpegMetadataReader.readMetadata(it, listOf(ExifReader())) }
 				.getFirstDirectoryOfType(ExifIFD0Directory::class.java)
 			val value = if (directory != null && directory.containsTag(ExifDirectoryBase.TAG_ORIENTATION)) {
 				directory.getInt(ExifDirectoryBase.TAG_ORIENTATION)

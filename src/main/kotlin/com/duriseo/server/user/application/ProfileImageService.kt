@@ -49,12 +49,13 @@ class ProfileImageService(
 	private val readTx = TransactionTemplate(transactionManager).apply { isReadOnly = true }
 
 	/**
-	 * `PUT /me/profile-image`. [size]는 원본 바이트 수(내용을 읽기 전에 10MB를 넘으면 413)이고 [content]는 원본을 읽는다.
+	 * `PUT /me/profile-image`. [size]는 원본 바이트 수(10MB를 넘으면 내용을 읽기 전에 413)이고 [open]은 원본을 읽는 새 입력 스트림이다.
+	 * 원본은 처리 자리를 얻은 뒤에 스트림에서 바로 읽는다(힙에 통째로 올리지 않는다).
 	 * 처리 결과 JPEG를 새 uuid의 객체 키로 저장한 뒤 `profile_image_key`를 그 uuid로 바꾼다.
 	 */
-	fun upload(userId: UUID, size: Long, content: () -> ByteArray) {
+	fun upload(userId: UUID, size: Long, open: () -> InputStream) {
 		processor.requireWithinSizeLimit(size)
-		val jpeg = processor.process(content())
+		val jpeg = processor.process(size, open)
 		val version = UUID.randomUUID().toString()
 		val objectKey = ProfileImageKeys.objectKey(userId, version)
 		storage.put(objectKey, jpeg)

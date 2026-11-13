@@ -2,7 +2,9 @@ package com.duriseo.server.user
 
 import com.duriseo.server.TestcontainersConfig
 import com.duriseo.server.job.CleanupJob
+import com.duriseo.server.config.DuriseoProperties.StorageType
 import com.duriseo.server.job.CleanupStore
+import com.duriseo.server.storage.StoredObject
 import com.duriseo.server.storage.ProfileImageKeys
 import com.duriseo.server.storage.ProfileImageStorage
 import com.duriseo.server.support.IntegrationTestSupport
@@ -22,7 +24,9 @@ import java.nio.file.Path
 import java.nio.file.attribute.FileTime
 import java.time.Duration
 import java.time.Instant
+import java.io.InputStream
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -80,6 +84,52 @@ class ProfileImageCleanupTest : IntegrationTestSupport() {
 	}
 
 	private fun newVersion() = UUID.randomUUID().toString()
+
+	@Test
+	fun `ERD 4_4 쓰다 만 임시 파일도 24시간이 지나면 지운다`() {
+		val owner = insertUser("MEMBER", "주인")
+		val now = clock.instant()
+		val key = putFile(owner, newVersion(), now, referenced = true)
+		val root = Path.of(properties.storage.localDir).toAbsolutePath().normalize()
+		val oldTemp = root.resolve(key).resolveSibling(".old.tmp")
+		val recentTemp = root.resolve(key).resolveSibling(".recent.tmp")
+		Files.write(oldTemp, byteArrayOf(1))
+		Files.write(recentTemp, byteArrayOf(1))
+		Files.setLastModifiedTime(oldTemp, FileTime.from(now.minus(Duration.ofHours(48))))
+		Files.setLastModifiedTime(recentTemp, FileTime.from(now.minus(Duration.ofHours(1))))
+
+		job.run()
+
+		assertTrue(!Files.exists(oldTemp))
+		assertTrue(Files.exists(recentTemp))
+		assertTrue(key in allFiles())
+	}
+
+	@Test
+	fun `ERD 4_4 저장소가 S3이면 cleanup-enabled가 true일 때만 사진 정리를 돈다`() {
+		val listCalls = AtomicInteger()
+		val fake = object : ProfileImageStorage {
+			override fun put(key: String, bytes: ByteArray) = Unit
+			override fun get(key: String): InputStream? = null
+			override fun delete(key: String) = Unit
+			override fun list(prefix: String, action: (StoredObject) -> Unit) {
+				listCalls.incrementAndGet()
+			}
+		}
+		fun jobWith(type: StorageType, enabled: Boolean) = CleanupJob(
+			cleanupStore, fake, properties.copy(storage = properties.storage.copy(type = type, cleanupEnabled = enabled)), clock,
+		)
+
+		jobWith(StorageType.S3, enabled = false).run()
+		assertEquals(0, listCalls.get(), "S3 + cleanup-enabled=false must not list (another environment could point at the prod bucket)")
+
+		jobWith(StorageType.S3, enabled = true).run()
+		assertEquals(1, listCalls.get())
+
+		// 로컬 디스크는 플래그와 관계없이 돈다
+		jobWith(StorageType.LOCAL, enabled = false).run()
+		assertEquals(2, listCalls.get())
+	}
 
 	@Test
 	fun `FR-AUTH-06 탈퇴하면 프로필 사진 파일을 바로 지운다`() {

@@ -264,11 +264,15 @@ Resources:
                   - s3:GetObject
                   - s3:PutObject
                   - s3:DeleteObject
-                Resource: !Sub "${ProfileImageBucket.Arn}/*"
+                Resource: !Sub "${ProfileImageBucket.Arn}/profile/*"
               - Sid: ListProfileImages
                 Effect: Allow
                 Action: s3:ListBucket
                 Resource: !GetAtt ProfileImageBucket.Arn
+                # IfExists: GetObject on a missing key checks ListBucket without a prefix, and that must still pass (404 instead of 403)
+                Condition:
+                  StringLikeIfExists:
+                    "s3:prefix": "profile/*"
       Tags:
         - { Key: Project, Value: duriseo }
 

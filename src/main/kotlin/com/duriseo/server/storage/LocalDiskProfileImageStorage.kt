@@ -43,7 +43,8 @@ class LocalDiskProfileImageStorage(root: Path) : ProfileImageStorage {
 		val start = root.resolve(prefix.trimEnd('/')).normalize()
 		if (!start.startsWith(root) || !Files.isDirectory(start)) return
 		Files.walk(start).use { paths ->
-			paths.filter { Files.isRegularFile(it) && !it.fileName.toString().endsWith(TEMP_SUFFIX) }.forEach { path ->
+			// 쓰다 만 임시 파일(.tmp)도 목록에 나온다: 정리 작업이 24시간 지난 것을 지운다
+			paths.filter { Files.isRegularFile(it) }.forEach { path ->
 				val key = root.relativize(path).joinToString("/")
 				if (key.startsWith(prefix)) {
 					val modified = try {

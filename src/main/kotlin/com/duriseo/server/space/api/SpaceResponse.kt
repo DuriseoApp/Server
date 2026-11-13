@@ -38,7 +38,7 @@ data class SpaceMemberResponse(
 ) {
 	companion object {
 		fun from(detail: SpaceMemberDetail) = SpaceMemberResponse(
-		detail.userId, detail.nickname, detail.color, detail.hasProfileImage, detail.profileImageVersion,
-	)
+			detail.userId, detail.nickname, detail.color, detail.hasProfileImage, detail.profileImageVersion,
+		)
 	}
 }

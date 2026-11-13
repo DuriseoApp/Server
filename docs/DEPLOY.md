@@ -65,7 +65,7 @@ journalctl -u duriseo-backup --since today     # 오늘 백업 결과
 - 매일 04:00(KST)에 운영 DB를 백업해요. 버킷 이름은 CloudFormation 출력 `BackupBucketName`이에요. 30일이 지나면 자동으로 지워져요.
 - 지금 바로 백업: `systemctl start duriseo-backup`
 
-복구(운영 DB를 백업 시점으로 되돌림, 그 뒤 데이터는 사라짐):
+복구(운영 DB를 백업 시점으로 되돌림, 그 뒤 데이터는 사라짐). **프로필 사진은 DB가 아니라 S3에 있어요**: 복구하면 백업 이후에 올린 사진 파일은 DB가 가리키지 않게 돼 24시간 뒤 정리 작업이 지우고, 복구된 DB가 가리키는 옛 키의 파일이 이미 지워졌으면 그 사진은 404예요(사용자가 다시 올려요).
 
 ```bash
 sudo -i
