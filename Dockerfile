@@ -7,6 +7,9 @@ RUN groupadd --system app && useradd --system --gid app --home-dir /app --no-cre
 WORKDIR /app
 COPY build/libs/app.jar app.jar
 
+# dev 앱의 프로필 사진 폴더 (Docker 볼륨이 이 폴더의 소유자를 물려받는다, API.md 8장). prod 앱은 S3를 쓴다
+RUN mkdir -p /data/profile-images && chown app:app /data/profile-images
+
 USER app
 EXPOSE 8080
 

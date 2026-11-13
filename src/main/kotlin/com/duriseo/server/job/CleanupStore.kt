@@ -1,5 +1,6 @@
 package com.duriseo.server.job
 
+import com.duriseo.server.storage.ProfileImageKeys
 import com.duriseo.server.user.application.WithdrawalService
 import jakarta.persistence.EntityManager
 import org.springframework.stereotype.Component
@@ -138,6 +139,22 @@ class CleanupStore(
 		"delete from notifications where id in (select n.id from notifications n where n.created_at <= :cutoff limit :limit)",
 		"cutoff" to cutoff, "limit" to limit,
 	)
+
+	// ── 8. 프로필 사진 ─────────────────────────────────
+
+	/**
+	 * `users.profile_image_key`가 가리키는 사진의 저장소 객체 키 전체 (`profile/{userId}/{uuid}.jpg`). 컬럼에는 uuid만 있어 키로 만들어 비교한다 (진행 기록 단위 7 확인 필요 1).
+	 * 사진을 가진 사용자 수만큼의 짧은 문자열이라 한 번에 읽는다.
+	 */
+	@Transactional(readOnly = true)
+	fun profileImageObjectKeysInUse(): Set<String> =
+		em.createNativeQuery("select u.id, u.profile_image_key from users u where u.profile_image_key is not null")
+			.resultList
+			.map { row ->
+				row as Array<*>
+				ProfileImageKeys.objectKey(row[0] as UUID, row[1] as String)
+			}
+			.toSet()
 
 	private fun update(sql: String, vararg params: Pair<String, Any>): Int {
 		val query = em.createNativeQuery(sql)

@@ -26,6 +26,9 @@
 | `KAKAO_ADMIN_KEY` | **비밀** | 카카오 어드민 키. 탈퇴 시 연결 끊기, 연결 해제 웹훅 인증(`Authorization: KakaoAK …`) |
 | `FIREBASE_PROJECT_ID` | 공개 설정 | Firebase 프로젝트 ID |
 | `FIREBASE_CREDENTIALS_BASE64` | **비밀** | 서비스 계정 키 JSON을 base64로 (`base64 -i key.json \| tr -d '\n'`) |
+| `STORAGE_TYPE` | 설정 | 프로필 사진 저장소. `local`(맥·개발 서버, 기본) 또는 `s3`(운영). AWS 서버는 배포 스크립트가 dev 앱에 `local`, prod 앱에 `s3`를 넣어요 (API.md 8장) |
+| `STORAGE_LOCAL_DIR` | 설정 | `local`일 때 사진 폴더. 맥 기본값 `./data/profile-images`(커밋 안 됨), 개발 서버는 Docker 볼륨 `/data/profile-images` |
+| `STORAGE_S3_BUCKET` | 공개 설정 | `s3`일 때 사진 버킷 이름(Parameter Store `/duriseo/config/PROFILE_IMAGE_BUCKET`). S3 접근 키는 만들지 않아요: AWS 서버의 EC2 역할이 권한을 줘요 |
 | `JWT_SECRET` | **비밀** | 토큰 서명 키. AWS 서버는 배포 스크립트가 환경마다 만들어 넣어요(`openssl rand -hex 32`, 64자). 앱은 문자열을 UTF-8 그대로 키로 쓰고, 32바이트 미만이거나 비어 있으면 시작하지 않아요 |
 
 새 환경변수를 만들면 `.env.example`, 이 표, `application.yml`, `deploy/bin/deploy.sh`를 같은 PR에서 함께 고쳐요.
@@ -34,7 +37,7 @@
 
 서버 한 대에 개발 앱, 운영 앱, PostgreSQL, HTTPS 앞단(Caddy)을 Docker로 올려요. AWS 자원은 CloudFormation 템플릿 `deploy/aws/duriseo-stack.yml` 하나로 한 번에 만들어요. 운영 방법은 `docs/DEPLOY.md`를 봐요.
 
-만들어지는 것: EC2 t4g.small 1대(고정 IP), 운영 DB 백업 버킷(S3, 30일 보관), 이미지 저장소(ECR), GitHub Actions 배포 역할(OIDC, 비밀 키 없음), 설정값(Parameter Store `/duriseo/config/*`). 비용은 한 달 약 20~21달러예요 (서버 15, 고정 IP 3.6, 디스크 1.8, 나머지 몇 센트).
+만들어지는 것: EC2 t4g.small 1대(고정 IP), 운영 DB 백업 버킷(S3, 30일 보관), 운영 프로필 사진 버킷(S3, 공개 차단·암호화), 이미지 저장소(ECR), GitHub Actions 배포 역할(OIDC, 비밀 키 없음), 설정값(Parameter Store `/duriseo/config/*`). 비용은 한 달 약 20~21달러예요 (서버 15, 고정 IP 3.6, 디스크 1.8, 나머지 몇 센트).
 
 ### 3.1 DuckDNS 도메인 2개
 
@@ -102,6 +105,25 @@ DB 비밀번호와 토큰 서명 키(`JWT_SECRET`)는 서버가 처음 배포할
 | 이름 | 내용 |
 | --- | --- |
 | `AWS_DEPLOY_ROLE_ARN` | 3.3의 배포 역할 ARN. 이것 하나만 있으면 돼요. 서버 ID, 이미지 저장소 주소 같은 값은 배포 때 Parameter Store에서 읽어요 |
+
+### 3.8 기존 스택에 프로필 사진 버킷 더하기 (단위 7, 사람이 해요)
+
+스택을 이미 만들어 둔 상태에서 단위 7(프로필 사진)을 운영에 올리려면 템플릿에 새로 들어간 **프로필 사진 버킷**(`ProfileImageBucket`)과 서버 역할의 버킷 권한(`s3:GetObject`·`PutObject`·`DeleteObject`·`ListBucket`), 설정값 `/duriseo/config/PROFILE_IMAGE_BUCKET`을 스택에 반영해야 해요. **스택 업데이트는 에이전트가 하지 않고 사람이 해요.** 이 일을 하기 전에 prod를 배포하면 배포 스크립트가 "PROFILE_IMAGE_BUCKET 이 없습니다"라며 멈춰요(운영 앱은 그대로예요). dev 배포는 영향이 없어요.
+
+1. 최신 `deploy/aws/duriseo-stack.yml`을 받아요 (3.2의 1번과 같아요).
+2. CloudFormation › `duriseo` 스택 › 업데이트 › **기존 템플릿 바꾸기** › 템플릿 파일 업로드 › 다음. 파라미터는 모두 **이전 값 사용**(그대로)이에요.
+3. 끝까지 가서 **바로 실행하지 말고 변경 세트로 먼저 봐요** (`docs/DEPLOY.md` 5장). 바뀌는 것은 `ProfileImageBucket`, `ProfileImageBucketPolicy`, `ParamProfileImageBucket` 추가와 `ServerRole` 수정뿐이어야 해요. **`Server`(EC2) 행이 보이고 교체(Replacement)가 `True`이면 실행하지 말고** 멈춰요. 서버가 새로 만들어지면 DB 데이터가 없어져요.
+4. 실행하고 `UPDATE_COMPLETE`가 되면 출력 `ProfileImageBucketName`과 Parameter Store의 `/duriseo/config/PROFILE_IMAGE_BUCKET` 값이 같은지 봐요.
+5. 컨테이너가 EC2 역할의 권한을 받으려면 서버의 메타데이터 응답 hop limit이 2 이상이어야 해요. 콘솔 Session Manager에서:
+   ```bash
+   sudo -i
+   export AWS_REGION=ap-northeast-2
+   id=$(aws ssm get-parameter --name /duriseo/config/INSTANCE_ID --query Parameter.Value --output text)
+   aws ec2 describe-instances --instance-ids "$id" --query 'Reservations[].Instances[].MetadataOptions.HttpPutResponseHopLimit'
+   # 1이면 2로 올려요 (재부팅 불필요)
+   aws ec2 modify-instance-metadata-options --instance-id "$id" --http-put-response-hop-limit 2 --http-tokens required
+   ```
+6. prod를 배포하고(Actions › 배포 › `prod`) 앱에서 사진을 올려 봐요. 버킷에 `profile/<사용자ID>/<uuid>.jpg`가 생기고, `docker logs duriseo-prod-app-1`에 `AccessDenied`가 없으면 돼요.
 
 ## 4. 공개 레포 주의
 

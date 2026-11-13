@@ -34,8 +34,11 @@ data class SpaceMemberResponse(
 	val nickname: String,
 	val color: String,
 	val hasProfileImage: Boolean,
+	val profileImageVersion: String?,
 ) {
 	companion object {
-		fun from(detail: SpaceMemberDetail) = SpaceMemberResponse(detail.userId, detail.nickname, detail.color, detail.hasProfileImage)
+		fun from(detail: SpaceMemberDetail) = SpaceMemberResponse(
+		detail.userId, detail.nickname, detail.color, detail.hasProfileImage, detail.profileImageVersion,
+	)
 	}
 }

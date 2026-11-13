@@ -1,6 +1,8 @@
 package com.duriseo.server.job
 
 import com.duriseo.server.common.api.ApiException
+import com.duriseo.server.storage.ProfileImageKeys
+import com.duriseo.server.storage.ProfileImageStorage
 import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
@@ -16,7 +18,7 @@ import java.util.UUID
  * 공간 삭제는 사용자 행 삭제보다 먼저(공간이 지워져야 사용자 참조가 없어진다).
  *
  * 1. 게스트 정리 — 2. `purge_at` 지난 공간 — 3. 참조 없는 탈퇴 사용자 행 — 4. 오래된 초대코드·시도 기록 — 5. 세션 —
- * 6. 세션 없는 사용자의 기기 — 7. 30일 지난 알림 — 8. 프로필 사진 파일 정리(**단위 7**, 사진 저장소와 함께 한 단계로 더한다)
+ * 6. 세션 없는 사용자의 기기 — 7. 30일 지난 알림 — 8. 프로필 사진 파일 정리 (저장소 목록 중 `users.profile_image_key`에 없고 마지막 수정이 24시간 지난 객체만 삭제, NFR-FILE-01)
  *
  * 단계마다 따로 트랜잭션이다([CleanupStore]의 메서드 하나가 하나). 한 단계가 실패해도 로그만 남기고 다음 단계로 간다.
  * 게스트 정리는 사용자마다 따로 트랜잭션이라 한 사용자의 실패가 다른 사용자를 막지 않는다.
@@ -24,6 +26,7 @@ import java.util.UUID
 @Component
 class CleanupJob(
 	private val store: CleanupStore,
+	private val profileImages: ProfileImageStorage,
 	private val clock: Clock,
 ) {
 
@@ -54,7 +57,7 @@ class CleanupJob(
 		step("7 notifications older than 30 days") {
 			repeatBatches { store.deleteNotificationsUpTo(clock.instant().minus(NOTIFICATION_RETENTION), BATCH_SIZE) }
 		}
-		// 8. 프로필 사진 파일 정리 (NFR-FILE-01, ERD 4.4 마지막 항목): 단위 7에서 사진 저장소(`storage/`)와 함께 여기에 한 단계로 더한다.
+		step("8 profile image files") { cleanProfileImages() }
 	}
 
 	/** 게스트마다 따로 트랜잭션이다. 이미 지워졌거나 그 사이 세션이 생긴 사용자는 건너뛰고, 실패한 사용자는 로그만 남긴다 */
@@ -75,6 +78,25 @@ class CleanupJob(
 				}
 			}
 			after = ids.last()
+		}
+	}
+
+	/**
+	 * 저장소 목록에서 DB가 가리키지 않고 마지막 수정이 24시간 지난 사진 파일만 지운다 (ERD 4.4, API.md 8장). 교체·삭제·탈퇴가 커밋 뒤 지우지 못한 파일을 회수한다.
+	 * 참조 집합을 먼저 읽고 목록을 훑는다: 그 뒤 올라온 파일은 마지막 수정이 최근이라 24시간 조건이 지킨다(업로드는 저장 뒤 키를 갱신한다).
+	 * 파일마다 실패는 로그만 남기고 다음으로 간다.
+	 */
+	private fun cleanProfileImages() {
+		val inUse = store.profileImageObjectKeysInUse()
+		val cutoff = clock.instant().minus(PROFILE_IMAGE_GRACE)
+		profileImages.list(ProfileImageKeys.PREFIX) { obj ->
+			if (obj.key !in inUse && obj.lastModified.isBefore(cutoff)) {
+				try {
+					profileImages.delete(obj.key)
+				} catch (e: Exception) {
+					log.warn("unreferenced profile image {} was not deleted ({})", obj.key, e.javaClass.simpleName)
+				}
+			}
 		}
 	}
 
@@ -99,5 +121,6 @@ class CleanupJob(
 		val ATTEMPT_RETENTION: Duration = Duration.ofDays(7)
 		val INVITE_CODE_RETENTION: Duration = Duration.ofDays(30)
 		val NOTIFICATION_RETENTION: Duration = Duration.ofDays(30)
+		val PROFILE_IMAGE_GRACE: Duration = Duration.ofHours(24)
 	}
 }

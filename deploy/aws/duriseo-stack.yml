@@ -2,7 +2,7 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >-
   Duriseo server infrastructure (Seoul). One EC2 instance running Docker Compose (dev app, prod app,
-  PostgreSQL, Caddy), Elastic IP, prod DB backup bucket, ECR, GitHub Actions deploy role (OIDC),
+  PostgreSQL, Caddy), Elastic IP, prod DB backup bucket, prod profile image bucket, ECR, GitHub Actions deploy role (OIDC),
   settings in Parameter Store. Setup guide: docs/SETUP.md section 3 in the Server repo.
 
 Metadata:
@@ -128,6 +128,53 @@ Resources:
               Bool:
                 aws:SecureTransport: "false"
 
+  # Prod profile photos (API.md section 8). The dev app uses a local Docker volume instead.
+  # Same hardening as BackupBucket. Photos are deleted by the app (replace, delete, withdrawal, daily cleanup), so no expiration rule
+  ProfileImageBucket:
+    Type: AWS::S3::Bucket
+    # Keep user photos even if the stack is deleted
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: abort-incomplete-uploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 1
+      Tags:
+        - { Key: Project, Value: duriseo }
+
+  ProfileImageBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ProfileImageBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !GetAtt ProfileImageBucket.Arn
+              - !Sub "${ProfileImageBucket.Arn}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
   ImageRepository:
     Type: AWS::ECR::Repository
     Properties:
@@ -210,6 +257,18 @@ Resources:
                 Effect: Allow
                 Action: s3:ListBucket
                 Resource: !GetAtt BackupBucket.Arn
+              # Prod app profile photos. ListBucket is needed for the daily cleanup and so that a missing key returns 404 instead of 403
+              - Sid: ProfileImages
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource: !Sub "${ProfileImageBucket.Arn}/*"
+              - Sid: ListProfileImages
+                Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt ProfileImageBucket.Arn
       Tags:
         - { Key: Project, Value: duriseo }
 
@@ -392,6 +451,9 @@ Resources:
   ParamBackupBucket:
     Type: AWS::SSM::Parameter
     Properties: { Name: /duriseo/config/BACKUP_BUCKET, Type: String, Value: !Ref BackupBucket }
+  ParamProfileImageBucket:
+    Type: AWS::SSM::Parameter
+    Properties: { Name: /duriseo/config/PROFILE_IMAGE_BUCKET, Type: String, Value: !Ref ProfileImageBucket }
   ParamEcrRepositoryUri:
     Type: AWS::SSM::Parameter
     Properties: { Name: /duriseo/config/ECR_REPOSITORY_URI, Type: String, Value: !GetAtt ImageRepository.RepositoryUri }
@@ -412,3 +474,6 @@ Outputs:
   BackupBucketName:
     Description: Prod DB backup bucket (kept 30 days)
     Value: !Ref BackupBucket
+  ProfileImageBucketName:
+    Description: Prod profile photo bucket (the prod app reads and writes it with the server role)
+    Value: !Ref ProfileImageBucket

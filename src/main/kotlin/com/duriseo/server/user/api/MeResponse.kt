@@ -19,6 +19,7 @@ data class MeResponse(
 	val timeZone: String,
 	val providers: List<SocialProvider>,
 	val hasProfileImage: Boolean,
+	val profileImageVersion: String?,
 	val createdAt: Instant,
 	val space: MeSpaceResponse,
 ) {
@@ -30,6 +31,7 @@ data class MeResponse(
 			timeZone = view.timeZone,
 			providers = view.providers,
 			hasProfileImage = view.hasProfileImage,
+			profileImageVersion = view.profileImageVersion,
 			createdAt = view.createdAt,
 			space = MeSpaceResponse.from(view.space),
 		)
@@ -76,8 +78,10 @@ data class MePartnerResponse(
 	val nickname: String,
 	val color: String,
 	val hasProfileImage: Boolean,
+	val profileImageVersion: String?,
 ) {
 	companion object {
-		fun from(view: MePartnerView) = MePartnerResponse(view.id, view.nickname, view.color, view.hasProfileImage)
+		fun from(view: MePartnerView) =
+			MePartnerResponse(view.id, view.nickname, view.color, view.hasProfileImage, view.profileImageVersion)
 	}
 }

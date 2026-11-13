@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RestController
+import org.springframework.web.multipart.MaxUploadSizeExceededException
 
 /** 오류 응답이 API.md 1.1 오류 객체 모양인지 확인한다 */
 class GlobalExceptionHandlerTest {
@@ -76,8 +77,19 @@ class GlobalExceptionHandlerTest {
 			.andExpect(jsonPath("$.message").value("internal error"))
 	}
 
+	@Test
+	fun `FR-AUTH-07 AC7 multipart 한도를 넘으면 413 IMAGE_TOO_LARGE`() {
+		mockMvc.perform(get("/test/too-large"))
+			.andExpect(status().isContentTooLarge)
+			.andExpect(jsonPath("$.code").value("IMAGE_TOO_LARGE"))
+			.andExpect(jsonPath("$.details").doesNotExist())
+	}
+
 	@RestController
 	class TestController {
+		@GetMapping("/test/too-large")
+		fun tooLarge(): String = throw MaxUploadSizeExceededException(10L * 1024 * 1024)
+
 		@GetMapping("/test/not-author")
 		fun notAuthor(): String = throw ApiException(ErrorCode.NOT_AUTHOR)
 

@@ -84,6 +84,18 @@ google_web_client_id="$(param /duriseo/config/GOOGLE_WEB_CLIENT_ID)"
 kakao_app_id="$(param /duriseo/config/KAKAO_APP_ID)"
 firebase_project_id="$(param /duriseo/config/FIREBASE_PROJECT_ID)"
 
+# 프로필 사진 저장소 (API.md 8장): prod 앱은 S3(서버 IAM 역할로 접근, 키 없음), dev 앱은 로컬 디스크(Docker 볼륨)
+storage_type=local
+storage_bucket=""
+if [ "$ENV_NAME" = prod ]; then
+	storage_type=s3
+	storage_bucket="$(param /duriseo/config/PROFILE_IMAGE_BUCKET optional)"
+	if [ -z "$storage_bucket" ]; then
+		echo "Parameter Store에 /duriseo/config/PROFILE_IMAGE_BUCKET 이 없습니다. CloudFormation 스택을 업데이트해야 합니다 (docs/DEPLOY.md 5장)" >&2
+		exit 1
+	fi
+fi
+
 write_env "$STATE_DIR/caddy.env" <<EOF
 DOMAIN_DEV=$domain_dev
 DOMAIN_PROD=$domain_prod
@@ -110,6 +122,9 @@ KAKAO_APP_ID=$kakao_app_id
 KAKAO_ADMIN_KEY=$kakao_admin_key
 FIREBASE_PROJECT_ID=$firebase_project_id
 FIREBASE_CREDENTIALS_BASE64=$firebase_base64
+STORAGE_TYPE=$storage_type
+STORAGE_LOCAL_DIR=/data/profile-images
+STORAGE_S3_BUCKET=$storage_bucket
 EOF
 unset firebase_json firebase_base64 kakao_admin_key
 
