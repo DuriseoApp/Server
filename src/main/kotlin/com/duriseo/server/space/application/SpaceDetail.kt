@@ -21,4 +21,5 @@ data class SpaceMemberDetail(
 	val nickname: String,
 	val color: String,
 	val hasProfileImage: Boolean,
+	val profileImageVersion: String?,
 )

@@ -128,3 +128,6 @@ $RECYCLE.BIN/
 .env
 .env.*
 !.env.example
+
+# 로컬 프로필 사진 저장소 (duriseo.storage.local-dir 기본값)
+/data/

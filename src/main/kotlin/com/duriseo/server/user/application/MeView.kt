@@ -16,6 +16,8 @@ data class MeView(
 	val timeZone: String,
 	val providers: List<SocialProvider>,
 	val hasProfileImage: Boolean,
+	/** 사진의 객체 키 uuid (`users.profile_image_key`). 사진이 없으면 null */
+	val profileImageVersion: String?,
 	val createdAt: Instant,
 	val space: MeSpaceView,
 )
@@ -32,4 +34,10 @@ data class MeSpaceView(
 	val importCounts: ImportCounts?,
 )
 
-data class MePartnerView(val id: UUID, val nickname: String, val color: String, val hasProfileImage: Boolean)
+data class MePartnerView(
+	val id: UUID,
+	val nickname: String,
+	val color: String,
+	val hasProfileImage: Boolean,
+	val profileImageVersion: String?,
+)

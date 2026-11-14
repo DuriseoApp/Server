@@ -26,6 +26,11 @@
 | `KAKAO_ADMIN_KEY` | **비밀** | 카카오 어드민 키. 탈퇴 시 연결 끊기, 연결 해제 웹훅 인증(`Authorization: KakaoAK …`) |
 | `FIREBASE_PROJECT_ID` | 공개 설정 | Firebase 프로젝트 ID |
 | `FIREBASE_CREDENTIALS_BASE64` | **비밀** | 서비스 계정 키 JSON을 base64로 (`base64 -i key.json \| tr -d '\n'`) |
+| `STORAGE_TYPE` | 설정 | 프로필 사진 저장소. `local`(맥·개발 서버, 기본) 또는 `s3`(운영). AWS 서버는 배포 스크립트가 dev 앱에 `local`, prod 앱에 `s3`를 넣어요 (API.md 8장) |
+| `STORAGE_LOCAL_DIR` | 설정 | `local`일 때 사진 폴더. 맥 기본값 `./data/profile-images`(커밋 안 됨), 개발 서버는 Docker 볼륨 `/data/profile-images` |
+| `STORAGE_S3_BUCKET` | 공개 설정 | `s3`일 때 사진 버킷 이름(Parameter Store `/duriseo/config/PROFILE_IMAGE_BUCKET`). S3 접근 키는 만들지 않아요: AWS 서버의 EC2 역할이 권한을 줘요 |
+| `STORAGE_CLEANUP_ENABLED` | 설정 | `s3`일 때 정리 작업 8단계(DB가 가리키지 않는 사진 파일 삭제)를 돌릴지. 기본 `false`이고 배포 스크립트가 **prod 앱에만** `true`를 넣어요. 맥·dev가 운영 버킷을 가리켜도 운영 사진을 지우지 않게 하는 보호 장치예요. 로컬 디스크는 이 값과 관계없이 돌아요 |
+| `AWS_EC2_METADATA_DISABLED` | 설정 | AWS SDK 환경변수. 배포 스크립트가 dev 앱에 `true`를 넣어 dev 컨테이너가 서버 IAM 역할을 쓰지 못하게 해요 (dev는 로컬 저장소라 AWS가 필요 없어요) |
 | `JWT_SECRET` | **비밀** | 토큰 서명 키. AWS 서버는 배포 스크립트가 환경마다 만들어 넣어요(`openssl rand -hex 32`, 64자). 앱은 문자열을 UTF-8 그대로 키로 쓰고, 32바이트 미만이거나 비어 있으면 시작하지 않아요 |
 
 새 환경변수를 만들면 `.env.example`, 이 표, `application.yml`, `deploy/bin/deploy.sh`를 같은 PR에서 함께 고쳐요.
@@ -34,7 +39,7 @@
 
 서버 한 대에 개발 앱, 운영 앱, PostgreSQL, HTTPS 앞단(Caddy)을 Docker로 올려요. AWS 자원은 CloudFormation 템플릿 `deploy/aws/duriseo-stack.yml` 하나로 한 번에 만들어요. 운영 방법은 `docs/DEPLOY.md`를 봐요.
 
-만들어지는 것: EC2 t4g.small 1대(고정 IP), 운영 DB 백업 버킷(S3, 30일 보관), 이미지 저장소(ECR), GitHub Actions 배포 역할(OIDC, 비밀 키 없음), 설정값(Parameter Store `/duriseo/config/*`). 비용은 한 달 약 20~21달러예요 (서버 15, 고정 IP 3.6, 디스크 1.8, 나머지 몇 센트).
+만들어지는 것: EC2 t4g.small 1대(고정 IP), 운영 DB 백업 버킷(S3, 30일 보관), 운영 프로필 사진 버킷(S3, 공개 차단·암호화), 이미지 저장소(ECR), GitHub Actions 배포 역할(OIDC, 비밀 키 없음), 설정값(Parameter Store `/duriseo/config/*`). 비용은 한 달 약 20~21달러예요 (서버 15, 고정 IP 3.6, 디스크 1.8, 나머지 몇 센트).
 
 ### 3.1 DuckDNS 도메인 2개
 
@@ -102,6 +107,55 @@ DB 비밀번호와 토큰 서명 키(`JWT_SECRET`)는 서버가 처음 배포할
 | 이름 | 내용 |
 | --- | --- |
 | `AWS_DEPLOY_ROLE_ARN` | 3.3의 배포 역할 ARN. 이것 하나만 있으면 돼요. 서버 ID, 이미지 저장소 주소 같은 값은 배포 때 Parameter Store에서 읽어요 |
+
+### 3.8 기존 스택에 프로필 사진 버킷 더하기 (단위 7, 사람이 해요)
+
+스택을 이미 만들어 둔 상태에서 단위 7(프로필 사진)을 운영에 올리려면 템플릿에 새로 들어간 **프로필 사진 버킷**(`ProfileImageBucket`)과 서버 역할의 버킷 권한(`s3:GetObject`·`PutObject`·`DeleteObject`·`ListBucket`), 설정값 `/duriseo/config/PROFILE_IMAGE_BUCKET`을 스택에 반영해야 해요. **스택 업데이트는 에이전트가 하지 않고 사람이 해요.** 이 일을 하기 전에 prod를 배포하면 배포 스크립트가 "PROFILE_IMAGE_BUCKET 이 없습니다"라며 멈춰요(운영 앱은 그대로예요). dev 배포는 영향이 없어요.
+
+1. 최신 `deploy/aws/duriseo-stack.yml`을 받아요 (3.2의 1번과 같아요).
+2. **현재 서버의 OS 이미지(AMI)를 고정해 둬요.** 템플릿의 `LatestAmiId`는 SSM 파라미터 형식이라 스택을 업데이트할 때마다 "최신 AMI"로 다시 읽혀요. "이전 값 사용"을 골라도 마찬가지라 `Server`(EC2) 교체가 나올 수 있어요. 지금 서버가 쓰는 AMI ID를 담은 **내 SSM 파라미터**를 만들고, 업데이트 때 `LatestAmiId`에 그 파라미터 이름을 넘겨요 (템플릿은 바꾸지 않아요). 콘솔 Session Manager 또는 AWS CLI에서:
+   ```bash
+   export AWS_REGION=ap-northeast-2
+   id=$(aws ssm get-parameter --name /duriseo/config/INSTANCE_ID --query Parameter.Value --output text)
+   ami=$(aws ec2 describe-instances --instance-ids "$id" --query 'Reservations[].Instances[].ImageId' --output text)
+   aws ssm put-parameter --name /duriseo/ami/current --type String --value "$ami"
+   ```
+   (이 파라미터는 스택이 만든 것이 아니라 사람이 만든 것이에요. 서버를 일부러 새로 만들 때만 새 AMI로 고쳐요.)
+3. CloudFormation › `duriseo` 스택 › 업데이트 › **기존 템플릿 바꾸기** › 템플릿 파일 업로드 › 다음. 파라미터는 `OS image`(`LatestAmiId`)만 값을 **`/duriseo/ami/current`**로 바꾸고 나머지는 **이전 값 사용**(그대로)이에요.
+4. 끝까지 가서 **바로 실행하지 말고 변경 세트로 먼저 봐요** (`docs/DEPLOY.md` 5장). 바뀌는 것은 `ProfileImageBucket`, `ProfileImageBucketPolicy`, `ParamProfileImageBucket` 추가와 `ServerRole` 수정뿐이어야 해요. **`Server`(EC2) 행이 보이고 교체(Replacement)가 `True`이면 실행하지 말고** 멈춰요. 서버가 새로 만들어지면 DB 데이터가 없어져요.
+5. 실행하고 `UPDATE_COMPLETE`가 되면 출력 `ProfileImageBucketName`과 Parameter Store의 `/duriseo/config/PROFILE_IMAGE_BUCKET` 값이 같은지 봐요.
+6. 컨테이너가 EC2 역할의 권한을 받으려면 서버의 메타데이터 응답 hop limit이 2 이상이어야 해요. 먼저 지금 값을 봐요:
+   ```bash
+   id=$(aws ssm get-parameter --name /duriseo/config/INSTANCE_ID --query Parameter.Value --output text)
+   aws ec2 describe-instances --instance-ids "$id" --query 'Reservations[].Instances[].MetadataOptions'
+   ```
+   **`HttpPutResponseHopLimit`이 이미 2이고 `HttpTokens`가 `required`이면(Amazon Linux 2023 기본값이에요) 할 일이 없어요.** 1이면 아래로 올려요 (재부팅 불필요). 이 명령은 `--http-tokens required`(IMDSv2만 허용)도 함께 정하니, 지금 값이 `optional`이면 그것도 바뀌는 점을 알고 실행해요 (배포 스크립트는 IMDSv2를 써서 영향이 없어요).
+   ```bash
+   aws ec2 modify-instance-metadata-options --instance-id "$id" --http-put-response-hop-limit 2 --http-tokens required
+   ```
+   hop limit이 2이면 서버의 **모든 컨테이너**가 서버 역할(S3 사진 버킷, Parameter Store 읽기, ECR 받기 등)을 받을 수 있어요. 위험과 대책은 아래 3.9예요.
+7. prod를 배포하고(Actions › 배포 › `prod`) 앱에서 사진을 올려 봐요. 버킷에 `profile/<사용자ID>/<uuid>.jpg`가 생기고, `docker logs duriseo-prod-app-1`에 `AccessDenied`가 없으면 돼요.
+
+### 3.9 프로필 사진 메모리 (사람이 확인해요)
+
+- 컨테이너 메모리 한도는 dev 512MB, prod 640MB예요(`deploy/bin/deploy.sh`). 사진 처리(디코드·인코딩)는 한 번에 **1건**만 해요(`duriseo.image.max-concurrent-processing`, 기본 1). 원본은 처리 자리를 얻은 뒤에 디스크(multipart 임시 파일)에서 바로 읽어 힙에 통째로 올리지 않아요.
+- **위험**: JPEG 디코더는 크기를 줄여 읽어도(subsampling) **progressive JPEG**는 전체 계수 버퍼를 네이티브 메모리로 잡아요. 25MP·4:4:4 progressive 사진은 약 150MB가 더 필요할 수 있고, 힙 상한(`MaxRAMPercentage=65`) 밖이라 컨테이너가 메모리 한도를 넘으면 앱이 종료돼요(`restart: unless-stopped`로 다시 떠요).
+- **확인 방법**: dev에서 25MP에 가까운 progressive 4:4:4 JPEG(예: 5000 × 5000, 품질 90 이상, 크로마 서브샘플링 없음)를 올려 보고 서버에서 `docker stats --no-stream duriseo-dev-app-1`과 `docker inspect -f '{{.State.OOMKilled}}' duriseo-dev-app-1`(`true`면 메모리 부족)을 봐요. 부족하면 서버 크기(`t4g.medium`)나 컨테이너 한도를 올려요. 앱이 25MP 안으로 줄여 올리므로(D-153) 실제로는 드물어요.
+
+### 3.10 서버 역할 노출 (사람이 정할 것)
+
+IMDS(`169.254.169.254`)의 hop limit이 2이면 도커 컨테이너(Caddy, PostgreSQL, dev 앱, prod 앱)가 모두 서버 IAM 역할의 자격 증명을 받을 수 있어요. 앱에 코드 실행 취약점이 생기면 그 역할의 권한(사진 버킷 읽기·쓰기·삭제, `/duriseo/secret/*` 읽기, 백업 버킷)이 노출돼요. 이 위험은 사진 기능 이전에도 hop limit 기본값(AL2023은 2)에 있었을 수 있어요.
+
+- 지금 적용한 것: dev 앱 컨테이너에 `AWS_EC2_METADATA_DISABLED=true`(배포 스크립트). dev는 로컬 저장소라 AWS 호출이 없어요 (앱은 실행 중에 Parameter Store를 읽지 않아요. 읽기는 서버의 배포 스크립트만 해요).
+- **권장 대책 (사람이 정해요, 배포 스크립트에는 넣지 않았어요)**: Docker의 `DOCKER-USER` 체인에서 prod 앱 컨테이너 말고는 IMDS를 막아요. 예시 (Session Manager, root):
+  ```bash
+  # prod 앱 컨테이너의 IP 확인
+  docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' duriseo-prod-app-1
+  # prod만 허용하고 나머지 컨테이너는 IMDS 차단 (위 IP를 넣어요)
+  iptables -I DOCKER-USER -d 169.254.169.254 -j DROP
+  iptables -I DOCKER-USER -s <prod 앱 컨테이너 IP>/32 -d 169.254.169.254 -j ACCEPT
+  ```
+  주의: 컨테이너 IP는 다시 만들어질 때 바뀔 수 있어 `compose`에서 prod 앱에 고정 IP를 주거나 규칙을 배포 뒤에 다시 적용해야 하고, 재부팅하면 규칙이 사라져 영구 저장(`iptables-services` 등)이 필요해요. 어느 방식으로 할지, 아니면 hop limit을 1로 두고 prod 앱을 호스트 네트워크로 띄울지는 사람이 정해요.
 
 ## 4. 공개 레포 주의
 

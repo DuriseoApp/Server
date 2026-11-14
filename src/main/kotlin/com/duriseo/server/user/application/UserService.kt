@@ -122,7 +122,7 @@ class UserService(
 	@Transactional(readOnly = true)
 	fun profilesOf(userIds: Collection<UUID>): Map<UUID, UserProfile> =
 		users.findAllById(userIds).associate { user ->
-			user.requireId() to UserProfile(user.requireId(), user.nickname, user.profileImageKey != null)
+			user.requireId() to UserProfile(user.requireId(), user.nickname, user.profileImageKey)
 		}
 
 	/** 탈퇴하지 않은 사용자. 없거나 탈퇴했으면 null */

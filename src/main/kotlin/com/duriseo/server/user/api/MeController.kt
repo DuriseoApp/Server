@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RestController
 
-/** 내 정보 API (API.md 3.1). 프로필 사진은 단위 7에서 더한다 */
+/** 내 정보 API (API.md 3.1). 프로필 사진 경로는 [ProfileImageController] */
 @RestController
 class MeController(
 	private val meService: MeService,

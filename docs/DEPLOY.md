@@ -11,6 +11,7 @@
                ├─ app-dev   (Compose 프로젝트 duriseo-dev)   SPRING_PROFILES_ACTIVE=dev
                └─ PostgreSQL 16 (duriseo-postgres)  DB duriseo_prod, duriseo_dev (사용자도 따로, 서로 접속 불가)
 S3 백업 버킷 <── 매일 04:00(KST) 운영 DB pg_dump, 30일 보관
+S3 프로필 사진 버킷 <── app-prod가 EC2 역할로 읽고 씀 (키 없음). app-dev는 Docker 볼륨 `duriseo-dev_profile-images`(로컬 디스크)
 ECR duriseo-server <── 커밋 SHA 태그 이미지, 최근 20개 보관
 ```
 
@@ -20,6 +21,7 @@ ECR duriseo-server <── 커밋 SHA 태그 이미지, 최근 20개 보관
 | `/opt/duriseo/current` | 마지막으로 성공한 배포의 릴리스 |
 | `/opt/duriseo/infra` | 공용 구성(Compose, Caddyfile, DB 초기화) 복사본 |
 | `/opt/duriseo/state` | 설정 파일(`*.env`), 환경별 현재 이미지(`image-dev`, `image-prod`). root만 읽음 |
+| Docker 볼륨 `duriseo-dev_profile-images` | 개발 앱의 프로필 사진 (`/data/profile-images`). 운영 사진은 S3에 있어요 |
 | `/opt/duriseo/state/secrets` | 서버가 만든 비밀값: DB 비밀번호, `JWT_SECRET`. **지우면 DB에 접속할 수 없어요** |
 
 ## 2. 배포
@@ -63,7 +65,7 @@ journalctl -u duriseo-backup --since today     # 오늘 백업 결과
 - 매일 04:00(KST)에 운영 DB를 백업해요. 버킷 이름은 CloudFormation 출력 `BackupBucketName`이에요. 30일이 지나면 자동으로 지워져요.
 - 지금 바로 백업: `systemctl start duriseo-backup`
 
-복구(운영 DB를 백업 시점으로 되돌림, 그 뒤 데이터는 사라짐):
+복구(운영 DB를 백업 시점으로 되돌림, 그 뒤 데이터는 사라짐). **프로필 사진은 DB가 아니라 S3에 있어요**: 복구하면 백업 이후에 올린 사진 파일은 DB가 가리키지 않게 돼 24시간 뒤 정리 작업이 지우고, 복구된 DB가 가리키는 옛 키의 파일이 이미 지워졌으면 그 사진은 404예요(사용자가 다시 올려요).
 
 ```bash
 sudo -i
@@ -84,14 +86,22 @@ shred -u /tmp/restore.dump
 
 - 도메인, 앱 설정값: Systems Manager › 파라미터 스토어에서 `/duriseo/config/*` 값을 고치고 배포를 다시 실행해요.
 - 비밀값: `/duriseo/secret/*`을 고치고 배포를 다시 실행해요.
-- **CloudFormation 스택은 업데이트하지 않아요.** 템플릿의 OS 이미지가 최신으로 바뀌면 서버가 새로 만들어져 DB 데이터가 새 서버에 없어요. 꼭 업데이트해야 하면 "변경 세트"를 먼저 만들어 `Server` 행의 교체(Replacement)가 `False`인지 보고, `True`면 실행하지 않아요.
+- **CloudFormation 스택은 업데이트하지 않아요.** 템플릿의 OS 이미지가 최신으로 바뀌면 서버가 새로 만들어져 DB 데이터가 새 서버에 없어요. 꼭 업데이트해야 하면 "변경 세트"를 먼저 만들어 `Server` 행의 교체(Replacement)가 `False`인지 보고, `True`면 실행하지 않아요. **스택 업데이트는 사람이 해요(에이전트는 하지 않아요).** 단위 7의 프로필 사진 버킷을 더하는 절차는 `docs/SETUP.md` 3.8이에요.
+- 프로필 사진 설정값: 버킷 이름은 CloudFormation이 만드는 `/duriseo/config/PROFILE_IMAGE_BUCKET`이고 배포 스크립트가 prod 앱에만 `STORAGE_TYPE=s3`로 넘겨요. 직접 고칠 값이 아니에요.
 - 도메인을 바꿀 때(예: DuckDNS → 구입한 도메인): 새 도메인을 서버 IP로 연결 → Parameter Store `DOMAIN_PROD`/`DOMAIN_DEV` 변경 → 재배포. 출시 뒤라면 구버전 앱이 쓰는 이전 주소도 한동안 같이 열어 둬야 해요 (Caddyfile에 주소 추가).
 
 ## 6. 서버 지우기
 
 1. EC2 › 인스턴스 › `duriseo-server` › 작업 › 인스턴스 설정 › 종료 방지 변경 › 끄기.
 2. CloudFormation › `duriseo` 스택 › 삭제.
-3. 백업 버킷은 남아요(데이터 보호). 필요 없으면 S3에서 비우고 지워요.
+3. 백업 버킷과 프로필 사진 버킷은 남아요(데이터 보호). 필요 없으면 S3에서 비우고 지워요.
+
+## 6.1 프로필 사진 저장소
+
+- 운영: S3 버킷(공개 차단, 서버 쪽 암호화). 사진은 교체·삭제·탈퇴 때 앱이 지우고, 지우지 못한 파일은 매일 03:00(KST) 정리 작업이 "DB가 가리키지 않고 마지막 수정이 24시간 지난 것"만 지워요. 버킷에는 만료 규칙이 없어요.
+- 개발: dev 앱 컨테이너의 `/data/profile-images`(Docker 볼륨). 서버를 지워도 볼륨은 남지만, 개발 데이터라 필요 없으면 `docker volume rm duriseo-dev_profile-images`로 지워요(dev 앱을 먼저 멈춰요).
+- 업로드 크기: 앱이 원본 10MB까지 받아요. Caddy에는 요청 크기 한도를 두지 않았어서(기본값 무제한) 10MB 업로드를 막지 않아요. 한도는 앱(`spring.servlet.multipart`)이 정해요.
+- 운영에서 사진이 안 올라가거나 안 보일 때: `docker logs duriseo-prod-app-1`에서 `AccessDenied`(역할 권한 또는 hop limit, `docs/SETUP.md` 3.8의 5번), `Unable to load credentials`(메타데이터 접근 막힘)를 찾아요.
 
 ## 7. 자주 나는 오류
 

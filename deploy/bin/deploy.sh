@@ -84,6 +84,23 @@ google_web_client_id="$(param /duriseo/config/GOOGLE_WEB_CLIENT_ID)"
 kakao_app_id="$(param /duriseo/config/KAKAO_APP_ID)"
 firebase_project_id="$(param /duriseo/config/FIREBASE_PROJECT_ID)"
 
+# 프로필 사진 저장소 (API.md 8장): prod 앱은 S3(서버 IAM 역할로 접근, 키 없음), dev 앱은 로컬 디스크(Docker 볼륨)
+storage_type=local
+storage_bucket=""
+storage_cleanup=false
+# dev 앱은 로컬 저장소라 AWS가 필요 없다: 컨테이너가 서버 역할(메타데이터)을 쓰지 못하게 SDK의 메타데이터 조회를 끈다
+aws_imds_disabled=true
+if [ "$ENV_NAME" = prod ]; then
+	storage_type=s3
+	storage_cleanup=true # 정리 작업 8단계는 운영 버킷을 아는 prod 앱만 돈다
+	aws_imds_disabled=false
+	storage_bucket="$(param /duriseo/config/PROFILE_IMAGE_BUCKET optional)"
+	if [ -z "$storage_bucket" ]; then
+		echo "Parameter Store에 /duriseo/config/PROFILE_IMAGE_BUCKET 이 없습니다. CloudFormation 스택을 업데이트해야 합니다 (docs/DEPLOY.md 5장)" >&2
+		exit 1
+	fi
+fi
+
 write_env "$STATE_DIR/caddy.env" <<EOF
 DOMAIN_DEV=$domain_dev
 DOMAIN_PROD=$domain_prod
@@ -110,6 +127,11 @@ KAKAO_APP_ID=$kakao_app_id
 KAKAO_ADMIN_KEY=$kakao_admin_key
 FIREBASE_PROJECT_ID=$firebase_project_id
 FIREBASE_CREDENTIALS_BASE64=$firebase_base64
+STORAGE_TYPE=$storage_type
+STORAGE_LOCAL_DIR=/data/profile-images
+STORAGE_S3_BUCKET=$storage_bucket
+STORAGE_CLEANUP_ENABLED=$storage_cleanup
+AWS_EC2_METADATA_DISABLED=$aws_imds_disabled
 EOF
 unset firebase_json firebase_base64 kakao_admin_key
 

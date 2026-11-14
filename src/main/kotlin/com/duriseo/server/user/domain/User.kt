@@ -35,7 +35,7 @@ class User(accountType: AccountType, nickname: String, timeZone: String, now: In
 	@Column(name = "updated_at", nullable = false)
 	var updatedAt: Instant = now
 
-	/** 탈퇴 익명화 (ERD 4.3 4단계): `deleted_at` 기록, 닉네임 "탈퇴한 사용자", 프로필 사진 키 삭제. 사진 파일 삭제는 단위 7 */
+	/** 탈퇴 익명화 (ERD 4.3 4단계): `deleted_at` 기록, 닉네임 "탈퇴한 사용자", 프로필 사진 키 삭제. 사진 파일은 `WithdrawalService`가 발행하는 `UserWithdrawn`을 커밋 뒤 듣는 `ProfileImageFileListener`가 지운다 */
 	fun anonymize(now: Instant) {
 		deletedAt = now
 		nickname = Nicknames.WITHDRAWN

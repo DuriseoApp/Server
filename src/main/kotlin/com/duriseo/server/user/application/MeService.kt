@@ -38,6 +38,7 @@ class MeService(
 				nickname = partnerUser.nickname,
 				color = membership.color,
 				hasProfileImage = partnerUser.profileImageKey != null,
+				profileImageVersion = partnerUser.profileImageKey,
 			)
 		}
 		return MeView(
@@ -47,6 +48,7 @@ class MeService(
 			timeZone = user.timeZone,
 			providers = socialAccounts.findAllByUserId(userId).map { it.provider }.sorted(),
 			hasProfileImage = user.profileImageKey != null,
+			profileImageVersion = user.profileImageKey,
 			createdAt = user.createdAt.truncatedTo(ChronoUnit.SECONDS),
 			space = MeSpaceView(
 				id = space.spaceId,

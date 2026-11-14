@@ -29,6 +29,8 @@ spring:
 
 server:
   shutdown: graceful
+  tomcat:
+    max-swallow-size: 20MB # 한도(10MB)를 넘는 업로드도 끝까지 받아 413으로 답하게 (기본 2MB면 연결이 끊긴다)
 
 logging:
   pattern:
@@ -62,6 +64,15 @@ duriseo:
   push:
     threads: 2 # 푸시·동기화 신호 발송 스레드 수
     queue-capacity: 1000 # 대기 한도. 넘치면 그 신호는 버리고 경고 로그만 남긴다
+  storage:
+    type: ${STORAGE_TYPE:local} # local(맥·개발 서버) | s3(운영). API.md 8장
+    local-dir: ${STORAGE_LOCAL_DIR:./data/profile-images}
+    s3-bucket: ${STORAGE_S3_BUCKET:} # type=s3일 때 필수. S3 자격 증명은 EC2 역할을 쓴다 (키를 넣지 않는다)
+    s3-region: ap-northeast-2
+    cleanup-enabled: ${STORAGE_CLEANUP_ENABLED:false} # s3일 때 정리 작업 8단계 실행 여부. prod 앱만 true (다른 환경이 운영 버킷의 사진을 지우지 않게)
+  image:
+    jpeg-quality: 0.85 # 프로필 사진 재인코딩 JPEG 품질
+    max-concurrent-processing: 1 # 사진 디코드·인코딩 동시 실행 수 (메모리, docs/SETUP.md "프로필 사진 메모리")
 
 ---
 # 개발 환경 (AWS 서버의 dev 컨테이너)

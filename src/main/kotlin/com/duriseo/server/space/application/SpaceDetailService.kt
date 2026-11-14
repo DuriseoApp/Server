@@ -37,7 +37,7 @@ class SpaceDetailService(
 			linkedAt = if (space.type == SpaceType.COUPLE) space.linkedAt else null,
 			members = activeMembers.map { member ->
 				val profile = checkNotNull(profiles[member.userId]) { "member user is missing" }
-				SpaceMemberDetail(member.userId, profile.nickname, member.color, profile.hasProfileImage)
+				SpaceMemberDetail(member.userId, profile.nickname, member.color, profile.hasProfileImage, profile.profileImageVersion)
 			},
 		)
 	}

@@ -5,6 +5,8 @@
 #   HOST_PORT     서버 안에서만 열리는 포트 (헬스 확인용, dev 8081 / prod 8080)
 #   APP_MEM_LIMIT 컨테이너 메모리 상한
 #   STATE_DIR     설정 파일 위치 (/opt/duriseo/state)
+# 프로필 사진: dev 앱은 로컬 디스크(Docker 볼륨 profile-images)에, prod 앱은 S3에 둔다 (STORAGE_TYPE은 설정 파일에서 정한다, API.md 8장).
+# prod 앱은 이 볼륨을 쓰지 않는다.
 services:
   app:
     image: ${APP_IMAGE:?}
@@ -12,6 +14,8 @@ services:
     env_file: ${STATE_DIR:?}/app-${APP_ENV:?}.env
     ports:
       - "127.0.0.1:${HOST_PORT:?}:8080"
+    volumes:
+      - profile-images:/data/profile-images
     mem_limit: ${APP_MEM_LIMIT:?}
     stop_grace_period: 30s
     networks:
@@ -23,6 +27,9 @@ services:
       options:
         max-size: "10m"
         max-file: "5"
+
+volumes:
+  profile-images:
 
 networks:
   duriseo:
