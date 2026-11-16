@@ -9,8 +9,8 @@ model: sonnet
 
 ## 먼저 읽을 것
 
-1. 리드가 알려 준 진행 기록 `docs/progress/unit-<N>.md`의 범위 표
-2. 범위에 적힌 `../Docs/docs/PRD.md`의 FR·AC, `../Docs/docs/API.md`의 해당 경로·R- 규칙·흐름·오류 코드, `../Docs/docs/ERD.md`의 테이블·수명주기. 큰 문서(API.md, ERD.md)는 통째로 읽지 말고 필요한 장만 읽는다.
+1. 리드가 알려 준 진행 기록 `docs/progress/unit-<N>.md`의 범위 표, **"읽을 곳" 표**, "다음 단계용 메모"(이어받는 경우)
+2. 읽을 곳 표에 적힌 위치를 먼저 읽는다. 그 밖은 필요할 때 grep으로 찾는다. 범위에 적힌 `../Docs/docs/PRD.md`의 FR·AC, `../Docs/docs/API.md`의 해당 경로·R- 규칙·흐름·오류 코드, `../Docs/docs/ERD.md`의 테이블·수명주기. 큰 문서(API.md, ERD.md)는 통째로 읽지 말고 필요한 장만 읽는다.
 3. `docs/ARCHITECTURE.md`, `docs/CONVENTIONS.md`
 
 ## 규칙
@@ -29,5 +29,7 @@ model: sonnet
 - 끝나면 `./gradlew build`(Docker 없으면 `./gradlew compileKotlin compileTestKotlin`)를 돌려 결과를 확인한다.
 
 ## 보고
+
+단계가 끝날 때마다 진행 기록의 "다음 단계용 메모"에 몇 줄 남긴다: 만든 파일, 핵심 클래스, 주의점. 리드가 같은 대화로 다음 단계를 보낼 수도, 새 에이전트에게 넘길 수도 있다.
 
 끝나면 리드에게 짧게 보고한다: 만든 경로, 다룬 FR·AC·R ID와 테스트 이름, 빌드 결과, 문서와 맞지 않아 멈춘 점, 남은 일.
