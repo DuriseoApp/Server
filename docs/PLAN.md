@@ -2,7 +2,7 @@
 
 작업 단위 하나가 PR 하나예요. 단위가 끝나면 이 표의 상태를 같은 PR에서 바꿔요. 화면·기능 내용은 Docs를 보고, 여기에는 순서와 범위만 적어요. 기준 Docs는 PRD v0.12예요.
 
-**지금 위치:** 키트 1~3과 단위 1~6이 머지됐고 개발 서버(dev)에 배포돼 있어요 (main `d619d1b`). 단위 6(알림)까지 머지됐어요. 단위 7(프로필 사진)은 PR #13으로 머지 대기예요. 끝난 단위의 진행 기록은 `docs/progress/archive/`에 있어요.
+**지금 위치:** 키트 1~3과 단위 1~7이 모두 머지됐고 개발 서버(dev)에 배포돼 있어요. 기능 단위는 끝났고, 남은 것은 출시 준비(아래 "사람이 할 일", 운영 배포)예요. Java4Shell 예방 옵션은 PR #15로 머지됐어요 (`docs/DEPLOY.md` 10장).
 
 상태: 완료 = 머지됨 · PR 완료 = PR을 열었고 머지 대기 · 대기 = 아직 시작 안 함.
 
@@ -18,7 +18,7 @@
 | 4 | 기념일: 자동 기념일 계산, 직접 기념일, 목록 2종, 캘린더용 범위 조회 | FR-ANNIV, API 3.3, R-05 | 완료 (PR #9) |
 | 5 | 메모: 메모, 날짜, 고정, 즐겨찾기 | FR-MEMO, API 3.4, R-03·R-04·R-06 | 완료 |
 | 6 | 알림: 알림 목록, 알림 설정, 푸시(FCM)·동기화 신호, 스케줄러(일정·기념일 알림), 정리 작업 | FR-NOTI, API 3.5·6장·7장, ERD 4.4 | 완료 |
-| 7 | 프로필 사진: 업로드·재인코딩·S3 | FR-AUTH-07, API 8장, NFR-FILE-01 | PR 완료 (PR #13) |
+| 7 | 프로필 사진: 업로드·재인코딩·S3 | FR-AUTH-07, API 8장, NFR-FILE-01 | 완료 |
 
 ## 앞 단위에서 넘어온 일
 
@@ -49,12 +49,13 @@
 - 사용자: Parameter Store `/duriseo/secret/KAKAO_ADMIN_KEY` 등록 확인 (`docs/SETUP.md` 3.5). 비어 있으면 탈퇴 때 Kakao 연결 끊기를 건너뛰고 Kakao 웹훅이 모두 401이 된다.
 - 사용자: Kakao Developers 동의항목 "닉네임" 켜기 (꺼져 있으면 Kakao 가입 닉네임이 모두 "사용자"가 된다, API.md 4.2).
 - 사용자: Kakao Developers 앱 › 웹훅 › 연결 해제 웹훅에 dev·prod 주소 등록 (`docs/DEPLOY.md` 9장).
+- 사용자: CloudFormation 스택 업데이트(운영 사진 버킷). 먼저 `/duriseo/ami/current`를 만들어 `LatestAmiId`에 넘기고, 변경 세트에서 `Server` 교체가 `False`인지 확인 (`docs/SETUP.md` 3.8). IMDS 노출 대책 결정(3.10), 25MP 사진 메모리 확인(3.9) (단위 7).
+- 사용자: Temurin 21 고친 빌드가 나오면 다시 배포 (`docs/DEPLOY.md` 10장).
 - 정리 검토: 날짜 범위 조회 검사·잘라내기를 `GET /events`·`GET /anniversaries`도 `common/api/DateRangeQuery`로 모은다 (지금 같은 규칙 복사본 3곳, 단위 5 리뷰).
 - 정리 검토: `auth`와 `user` 패키지가 서로 참조한다 (`SocialAuthService`가 `user` 서비스를, `WithdrawalService`가 `SessionService`를 부른다). 방향을 정리할지 검토한다.
 
 ## Docs 후속
 
-Docs 레포의 `/prd-sync`로 정해야 할 것이에요. 이 레포에서는 Docs를 고치지 않아요. 단위 1~4에서 모은 4건은 PRD v0.12로 반영돼 지웠어요.
+Docs 레포의 `/prd-sync`로 정해야 할 것이에요. 이 레포에서는 Docs를 고치지 않아요. 단위 1~4의 4건은 PRD v0.12, 단위 6의 2건(SPACE `UNLINKED` id, 푸시 data의 빈 값 키)은 PRD v0.13(D-160)으로 반영돼 지웠어요.
 
-- (단위 6) SPACE `UNLINKED` 신호에 공간 id를 싣는다. API.md 6장은 `LINKED`만 "id 없음"이라 적고 `UNLINKED`는 비어 있다.
-- (단위 6) 보이는 푸시 data에서 값이 null인 키(`body`·`targetType`·`targetId`)는 뺀다. FCM data는 문자열뿐이라 정해야 하는데 API.md 7장이 비어 있다.
+- (단위 7) ERD의 사진 객체 키 "uuid"와 API.md 8장 "객체 키는 `profile/{userId}/{uuid}.jpg`" 문구를 한 표현으로 정리 (archive/unit-7.md 확인 필요 1)
