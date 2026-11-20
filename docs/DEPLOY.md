@@ -147,3 +147,12 @@ docker exec duriseo-prod-app-1 sh -c 'printf "Authorization: KakaoAK %s\n" "$KAK
 
 **등록**: Kakao Developers의 앱 › 웹훅 › 연결 해제 웹훅에 `https://<서버 주소>/api/v1/webhooks/kakao/unlink`를 등록하는 것은 사람이 할 일이에요 (서버를 배포한 뒤). 운영 도메인과 개발 도메인을 각각 등록해요.
 
+
+## 10. JVM 보안 패치
+
+| CVE | 상태 | 할 일 |
+| --- | --- | --- |
+| CVE-2026-114938 (Java4Shell, OpenJDK Base64 디코더 메모리 손상) | 서버는 ARM(Graviton)이라 취약한 코드가 돌지 않음. 예방으로 `Dockerfile`의 `JAVA_TOOL_OPTIONS`에 `-XX:-UseBASE64Intrinsics` | Eclipse Temurin 21 고친 빌드가 나오면 다시 배포(베이스 이미지 `21-jre-noble`을 새로 받음). 배포한 컨테이너에서 `docker exec duriseo-prod-app-1 java -version`으로 버전을 확인한 뒤 플래그를 빼도 된다 |
+
+- 플래그가 실제로 적용됐는지: `docker exec duriseo-prod-app-1 java -XX:+PrintFlagsFinal -version | grep UseBASE64Intrinsics` → `false`
+- x86 인스턴스(t3 등)로 옮길 때는 Temurin 패치 여부를 먼저 확인한다.
