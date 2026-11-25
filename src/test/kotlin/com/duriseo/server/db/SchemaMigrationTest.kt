@@ -14,7 +14,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 /**
- * Flyway V1·V2가 실제 PostgreSQL 16에 적용되고, ERD 3장의 "제약" 열이 DB에서 지켜지는지 확인한다.
+ * Flyway V1~V3이 실제 PostgreSQL 16에 적용되고, ERD 3장의 "제약" 열이 DB에서 지켜지는지 확인한다.
  * "서비스"로 표시된 규칙은 여기서 보지 않는다 (각 작업 단위의 서비스 테스트가 본다).
  */
 @SpringBootTest
@@ -30,12 +30,12 @@ class SchemaMigrationTest {
 	}
 
 	@Test
-	fun `V2까지 적용되어 ERD의 15개 테이블이 있다`() {
+	fun `V3까지 적용되어 ERD의 15개 테이블이 있다`() {
 		val version = jdbc.queryForObject(
 			"select max(version) from flyway_schema_history where success",
 			String::class.java,
 		)
-		assertEquals("2", version)
+		assertEquals("3", version)
 
 		val tables = jdbc.queryForList(
 			"""
