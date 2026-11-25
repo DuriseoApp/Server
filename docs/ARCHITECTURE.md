@@ -19,7 +19,8 @@ com.duriseo.server
 ├── memo/            메모, 고정, 즐겨찾기
 ├── notification/    알림 행 만들기·삭제, 목록·읽음 API (설정 API는 `user/`의 `/me/notification-settings`)
 ├── push/            FCM 발송기, 동기화 신호 (SYNC), 도메인 이벤트 리스너 (단위 6)
-├── storage/         프로필 사진 저장소 (로컬 / S3), 사진 재인코딩 `ProfileImageProcessor`. 도메인을 모른다
+├── appops/          공지 팝업·업데이트 규칙(공개 조회, 관리자 API R-19), 강제 업데이트 차단 인터셉터 R-20, 공지 이미지 (단위 8). 공간·사용자와 관계없다
+├── storage/         프로필 사진·공지 이미지 저장소 (로컬 / S3, 접두어 `profile/`·`notice/`), 사진 재인코딩 `ProfileImageProcessor`, 공지 이미지 검사 `NoticeImageInspector`. 도메인을 모른다
 └── job/             정리 작업, 알림 스케줄러 — 단위 6에서 만든다
 ```
 

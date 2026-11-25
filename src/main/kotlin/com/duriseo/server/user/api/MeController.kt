@@ -2,6 +2,7 @@ package com.duriseo.server.user.api
 
 import com.duriseo.server.common.web.AuthenticatedUser
 import com.duriseo.server.common.web.CurrentUser
+import com.duriseo.server.user.application.DeviceInfo
 import com.duriseo.server.user.application.DeviceService
 import com.duriseo.server.user.application.MeService
 import com.duriseo.server.user.application.NotificationSettingsService
@@ -48,7 +49,10 @@ class MeController(
 		@CurrentUser requester: AuthenticatedUser,
 		@Valid @RequestBody request: RegisterDeviceRequest,
 	): ResponseEntity<Void> {
-		deviceService.register(requester.userId, request.fcmToken!!, request.platformOrDefault())
+		deviceService.register(
+			requester.userId, request.fcmToken!!, request.platformOrDefault(),
+			DeviceInfo(request.osVersion, request.appVersion, request.appBuildOrNull()),
+		)
 		return ResponseEntity.noContent().build()
 	}
 

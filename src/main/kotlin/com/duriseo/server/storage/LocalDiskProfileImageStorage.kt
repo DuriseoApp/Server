@@ -34,6 +34,8 @@ class LocalDiskProfileImageStorage(root: Path) : ProfileImageStorage {
 			null
 		}
 
+	override fun exists(key: String): Boolean = Files.isRegularFile(resolve(key))
+
 	override fun delete(key: String) {
 		// 빈 사용자 폴더는 남긴다: 지우면 같은 사용자의 동시 업로드(put)와 겹쳐 실패할 수 있다
 		Files.deleteIfExists(resolve(key))

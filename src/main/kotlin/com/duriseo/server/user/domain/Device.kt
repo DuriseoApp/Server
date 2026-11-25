@@ -24,6 +24,15 @@ class Device(userId: UUID, fcmToken: String, platform: DevicePlatform, now: Inst
 	@Column(name = "platform", nullable = false, length = 10)
 	var platform: DevicePlatform = platform
 
+	@Column(name = "os_version", length = 20)
+	var osVersion: String? = null
+
+	@Column(name = "app_version", length = 50)
+	var appVersion: String? = null
+
+	@Column(name = "app_build")
+	var appBuild: Int? = null
+
 	@Column(name = "updated_at", nullable = false)
 	var updatedAt: Instant = now
 }

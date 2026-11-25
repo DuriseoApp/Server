@@ -9,6 +9,7 @@ import com.duriseo.server.common.api.FieldErrorDetails
 import com.duriseo.server.common.api.FieldErrorReason
 import jakarta.servlet.http.HttpServletRequest
 import org.slf4j.LoggerFactory
+import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.http.converter.HttpMessageNotReadableException
 import org.springframework.web.HttpMediaTypeNotSupportedException
@@ -90,7 +91,9 @@ class GlobalExceptionHandler {
 		message: String,
 		details: ErrorDetails?,
 	): ResponseEntity<ErrorResponse> =
+		// Content-Type을 JSON으로 고정한다: `Accept: image/*`처럼 JSON을 받지 않는 요청도 오류 본문 변환에 실패해 다른 상태가 나가지 않게 한다
 		ResponseEntity.status(code.status)
+			.contentType(MediaType.APPLICATION_JSON)
 			.body(ErrorResponse(code, message, details, TraceIdFilter.of(request)))
 
 	private fun reasonOf(constraint: String?): FieldErrorReason = when (constraint) {

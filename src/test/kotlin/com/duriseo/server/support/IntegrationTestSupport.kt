@@ -105,7 +105,10 @@ abstract class IntegrationTestSupport {
 		anniversaryChanges.reset()
 		memoChanges.reset()
 		push.reset()
-		mockMvc = MockMvcBuilders.webAppContextSetup(context).build()
+		// 서블릿 필터는 webAppContextSetup이 자동으로 붙이지 않는다. 관리자 키 검사(R-19)는 DispatcherServlet 앞의 필터라 직접 붙인다
+		mockMvc = MockMvcBuilders.webAppContextSetup(context)
+			.addFilters<org.springframework.test.web.servlet.setup.DefaultMockMvcBuilder>(context.getBean(com.duriseo.server.appops.api.AdminKeyFilter::class.java))
+			.build()
 	}
 
 	// ── 요청 ────────────────────────────────────────────

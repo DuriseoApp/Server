@@ -38,6 +38,15 @@ enum class FieldErrorReason { REQUIRED, TOO_LONG, INVALID, OUT_OF_RANGE }
 /** INVITE_REISSUE_TOO_SOON, INVITE_RATE_LIMITED */
 data class RetryDetails(val retryAfterSeconds: Long) : ErrorDetails
 
+/** APP_VERSION_UNSUPPORTED (426): 맞은 `FORCE` 업데이트 규칙의 값. 규칙에 없는 값은 null이다 (API.md 1.1, R-20) */
+data class UpdateRuleDetails(
+	val ruleId: String,
+	val title: String?,
+	val body: String?,
+	val image: String?,
+	val imageAlt: String?,
+) : ErrorDetails
+
 /** 서비스 코드에서 던지는 예외. GlobalExceptionHandler가 오류 객체로 바꾼다 */
 class ApiException(
 	val code: ErrorCode,

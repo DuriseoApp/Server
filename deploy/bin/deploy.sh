@@ -113,6 +113,15 @@ if [ -n "$firebase_json" ]; then
 	firebase_base64="$(printf '%s' "$firebase_json" | base64 -w0)"
 fi
 kakao_admin_key="$(param /duriseo/secret/KAKAO_ADMIN_KEY optional)"
+# 관리자 API 키 (R-19): 비어 있으면 서버가 /admin/** 을 모두 404로 막는다(꺼짐)
+admin_api_key="$(param /duriseo/secret/ADMIN_API_KEY optional)"
+[ -n "$admin_api_key" ] || log "참고: 관리자 API 키(/duriseo/secret/ADMIN_API_KEY)가 아직 없어 관리자 API가 꺼져 있습니다"
+# 공지 이미지 업로드 응답 url의 앞부분 (API.md 8.2). 환경마다 자기 API 도메인이다
+if [ "$ENV_NAME" = prod ]; then
+	public_base_url="https://$domain_prod"
+else
+	public_base_url="https://$domain_dev"
+fi
 [ -n "$firebase_base64" ] || log "참고: Firebase 서비스 계정 키가 아직 Parameter Store에 없습니다"
 [ -n "$kakao_admin_key" ] || log "참고: 카카오 어드민 키가 아직 Parameter Store에 없습니다"
 
@@ -132,8 +141,10 @@ STORAGE_LOCAL_DIR=/data/profile-images
 STORAGE_S3_BUCKET=$storage_bucket
 STORAGE_CLEANUP_ENABLED=$storage_cleanup
 AWS_EC2_METADATA_DISABLED=$aws_imds_disabled
+DURISEO_ADMIN_API_KEY=$admin_api_key
+PUBLIC_BASE_URL=$public_base_url
 EOF
-unset firebase_json firebase_base64 kakao_admin_key
+unset firebase_json firebase_base64 kakao_admin_key admin_api_key
 
 # ── 3. PostgreSQL, Caddy ──
 log "ECR 로그인"

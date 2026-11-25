@@ -31,6 +31,8 @@
 | `STORAGE_S3_BUCKET` | 공개 설정 | `s3`일 때 사진 버킷 이름(Parameter Store `/duriseo/config/PROFILE_IMAGE_BUCKET`). S3 접근 키는 만들지 않아요: AWS 서버의 EC2 역할이 권한을 줘요 |
 | `STORAGE_CLEANUP_ENABLED` | 설정 | `s3`일 때 정리 작업 8단계(DB가 가리키지 않는 사진 파일 삭제)를 돌릴지. 기본 `false`이고 배포 스크립트가 **prod 앱에만** `true`를 넣어요. 맥·dev가 운영 버킷을 가리켜도 운영 사진을 지우지 않게 하는 보호 장치예요. 로컬 디스크는 이 값과 관계없이 돌아요 |
 | `AWS_EC2_METADATA_DISABLED` | 설정 | AWS SDK 환경변수. 배포 스크립트가 dev 앱에 `true`를 넣어 dev 컨테이너가 서버 IAM 역할을 쓰지 못하게 해요 (dev는 로컬 저장소라 AWS가 필요 없어요) |
+| `DURISEO_ADMIN_API_KEY` | **비밀** | 관리자 API(`/admin/**`, 공지·업데이트 규칙·공지 이미지) 키. 요청 헤더 `X-Admin-Key`와 같을 때만 허용해요(R-19). **비어 있으면 관리자 API가 꺼져 모두 404**예요. AWS 서버는 Parameter Store `/duriseo/secret/ADMIN_API_KEY`를 읽어요(없으면 비워 둬요). 맥에서는 `openssl rand -hex 32`로 만들어요 |
+| `PUBLIC_BASE_URL` | 설정 | 공지 이미지 업로드 응답 `url`의 앞부분(`https://<API 도메인>`, 끝에 `/` 없음, API.md 8.2). 배포 스크립트가 dev 앱에 `https://$DOMAIN_DEV`, prod 앱에 `https://$DOMAIN_PROD`를 넣어요. 맥은 `http://localhost:8080`. 비어 있으면 서버는 뜨지만 이미지 업로드만 500이에요 |
 | `JWT_SECRET` | **비밀** | 토큰 서명 키. AWS 서버는 배포 스크립트가 환경마다 만들어 넣어요(`openssl rand -hex 32`, 64자). 앱은 문자열을 UTF-8 그대로 키로 쓰고, 32바이트 미만이거나 비어 있으면 시작하지 않아요 |
 
 새 환경변수를 만들면 `.env.example`, 이 표, `application.yml`, `deploy/bin/deploy.sh`를 같은 PR에서 함께 고쳐요.
@@ -92,6 +94,7 @@ Systems Manager › 파라미터 스토어 › 파라미터 생성: 계층 **표
 | --- | --- |
 | `/duriseo/secret/KAKAO_ADMIN_KEY` | 카카오 어드민 키 |
 | `/duriseo/secret/FIREBASE_SERVICE_ACCOUNT_JSON` | Firebase 서비스 계정 키 JSON 파일 내용 전체 (base64 하지 않고 그대로) |
+| `/duriseo/secret/ADMIN_API_KEY` | 관리자 API 키. 긴 무작위 문자열(`openssl rand -hex 32`). 등록하기 전에는 관리자 API가 꺼져 있어요(`/admin/**`가 모두 404). 단위 8부터 앱이 써요 |
 
 DB 비밀번호와 토큰 서명 키(`JWT_SECRET`)는 서버가 처음 배포할 때 스스로 만들어요. 사람이 알 필요가 없어요.
 
