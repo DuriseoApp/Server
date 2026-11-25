@@ -15,7 +15,15 @@ data class DuriseoProperties(
 	val push: Push = Push(),
 	val storage: Storage = Storage(),
 	val image: Image = Image(),
+	val admin: Admin = Admin(),
+	/** 공지 이미지 업로드 응답 `url`의 앞부분 (예 `https://<API 도메인>`, 끝에 `/` 없음, API.md 8.2). 비면 서버는 뜨고 업로드만 500이다 */
+	val publicBaseUrl: String = "",
 ) {
+	/** 관리자 API 키 (R-19, NFR-SEC-04). 비어 있으면 `/admin/**`가 꺼진다(404). 로그에 찍히지 않도록 toString에서 가린다 */
+	data class Admin(val apiKey: String = "") {
+		override fun toString(): String = "Admin(apiKey=***)"
+	}
+
 	/**
 	 * access 토큰(HS256) 서명 키. 문자열을 UTF-8 바이트 그대로 키로 쓴다 (hex 디코드하지 않음).
 	 * 32바이트 이상이어야 한다. 로그에 찍히지 않도록 toString에서 값을 가린다.

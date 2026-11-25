@@ -70,6 +70,9 @@ duriseo:
     s3-bucket: ${STORAGE_S3_BUCKET:} # type=s3일 때 필수. S3 자격 증명은 EC2 역할을 쓴다 (키를 넣지 않는다)
     s3-region: ap-northeast-2
     cleanup-enabled: ${STORAGE_CLEANUP_ENABLED:false} # s3일 때 정리 작업 8단계 실행 여부. prod 앱만 true (다른 환경이 운영 버킷의 사진을 지우지 않게)
+  admin:
+    api-key: ${DURISEO_ADMIN_API_KEY:} # 관리자 API 키 (비밀값, R-19). 비어 있으면 /admin/** 이 모두 404 (꺼짐)
+  public-base-url: ${PUBLIC_BASE_URL:} # 공지 이미지 업로드 응답 url의 앞부분 (예 https://<API 도메인>, 끝에 / 없음). 비면 업로드만 500 (API.md 8.2)
   image:
     jpeg-quality: 0.85 # 프로필 사진 재인코딩 JPEG 품질
     max-concurrent-processing: 1 # 사진 디코드·인코딩 동시 실행 수 (메모리, docs/SETUP.md "프로필 사진 메모리")
