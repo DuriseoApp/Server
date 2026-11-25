@@ -2,12 +2,18 @@ package com.duriseo.server.cleanup
 
 import com.duriseo.server.TestcontainersConfig
 import com.duriseo.server.job.CleanupJob
+import com.duriseo.server.storage.NoticeImageKeys
+import com.duriseo.server.storage.ProfileImageKeys
+import com.duriseo.server.storage.ProfileImageStorage
 import com.duriseo.server.support.NotificationTestSupport
 import com.duriseo.server.support.TestClockConfig
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.attribute.FileTime
 import java.time.Duration
 import java.time.Instant
 import java.util.UUID
@@ -23,6 +29,9 @@ class CleanupJobTest : NotificationTestSupport() {
 
 	@Autowired
 	private lateinit var job: CleanupJob
+
+	@Autowired
+	private lateinit var storage: ProfileImageStorage
 
 	private fun daysAgo(days: Long): Instant = clock.instant().minus(Duration.ofDays(days))
 
@@ -266,5 +275,25 @@ class CleanupJobTest : NotificationTestSupport() {
 		assertEquals(true, spaceExists(expiredSpace))
 		assertEquals(0, count("select count(*) from notifications where id = ?", oldNotification))
 		assertEquals(false, sessionExists(expiredSession))
+	}
+
+	@Test
+	fun `프로필사진_정리는_notice_접두어를_지우지_않는다`() {
+		val root = Path.of(properties.storage.localDir).toAbsolutePath().normalize()
+		val old = FileTime.from(clock.instant().minus(Duration.ofHours(48)))
+		fun put(key: String): String {
+			storage.put(key, byteArrayOf(1, 2, 3))
+			Files.setLastModifiedTime(root.resolve(key), old)
+			return key
+		}
+		// 24시간 지난 미참조 파일: 프로필 사진은 지우고 공지 이미지는 지우지 않는다 (ERD DB-21, 4.4)
+		val orphanProfile = put("${ProfileImageKeys.PREFIX}${UUID.randomUUID()}/${UUID.randomUUID()}.jpg")
+		val notice = put(NoticeImageKeys.objectKey("${UUID.randomUUID()}.png"))
+
+		job.run()
+
+		assertEquals(false, Files.exists(root.resolve(orphanProfile)))
+		assertEquals(true, Files.exists(root.resolve(notice)))
+		storage.delete(notice)
 	}
 }

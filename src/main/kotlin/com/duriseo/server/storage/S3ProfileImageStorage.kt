@@ -19,7 +19,7 @@ class S3ProfileImageStorage(private val s3: S3Client, private val bucket: String
 
 	override fun put(key: String, bytes: ByteArray) {
 		s3.putObject(
-			PutObjectRequest.builder().bucket(bucket).key(key).contentType("image/jpeg").build(),
+			PutObjectRequest.builder().bucket(bucket).key(key).contentType(contentTypeOf(key)).build(),
 			RequestBody.fromBytes(bytes),
 		)
 	}
@@ -43,6 +43,13 @@ class S3ProfileImageStorage(private val s3: S3Client, private val bucket: String
 	}
 
 	override fun close() = s3.close()
+
+	/** 프로필 사진(`.jpg`)과 공지 이미지(`.png`·`.jpg`·`.webp`)가 같은 버킷을 쓴다. 응답의 `Content-Type`은 서버가 정하지만 객체에도 맞춰 둔다 */
+	private fun contentTypeOf(key: String): String = when (key.substringAfterLast('.', "").lowercase()) {
+		"png" -> "image/png"
+		"webp" -> "image/webp"
+		else -> "image/jpeg"
+	}
 
 	companion object {
 		/** 서울 리전 등 [region]의 클라이언트. 자격 증명은 기본 체인(코드에 키 없음) */

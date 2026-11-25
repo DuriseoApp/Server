@@ -44,9 +44,24 @@
 4. **R-20 위치**: Spring MVC 인터셉터로 `AuthInterceptor`보다 먼저 등록한다(예외 → `GlobalExceptionHandler`가 1.1 형식으로 바꾼다). 대상은 `/api/v1/**`.
 5. **multipart 한도**: 전역 10MB 그대로. 공지 이미지 1MB는 서비스에서 검사(413).
 
+구현 중 정한 작은 것 (문서에 없는 구현 방법):
+
+6. **관리자 본문은 `Map<String, Any?>`로 받는다**(`appops/application/BodyReader`, `AppOpsValidator`). DTO로 받으면 타입이 틀린 값이 JSON 읽기 오류(빈 `details.fields`)가 되어 필드 이름을 못 붙이기 때문이다. 같은 필드는 처음 틀린 이유 하나만 `details.fields`에 담는다.
+7. **`build.min` > `build.max`는 `build.min`에 `INVALID`**(API.md가 필드를 지정하지 않음). `IN`의 빈 배열은 `build.values` `REQUIRED`, 51개 이상은 `TOO_LONG`. `osVersion`의 `min`·`max`가 둘 다 null이면 필드 `osVersion`에 `INVALID`(`min` > `max`는 거부하지 않는다, 문서에 없음).
+8. **`PUT /me/devices`의 `appBuild`는 `Any?`로 받고 `@ValidAppBuild`로 검사**한다(문자열·소수도 `appBuild` `INVALID`로 답하려고). 저장은 기존 INSERT … ON CONFLICT에 컬럼을 더했고 null은 `cast(:x as …)`로 묶는다.
+9. **R-19는 인터셉터**(`AdminKeyInterceptor`, 본문 읽기 전에 검사, 컨트롤러 메서드가 없는 `/admin/**` 경로도 키 검사 후 404). 인터셉터 순서: R-20 `order -20` → R-19 `-10` → 인증 `0`(`AuthWebConfig.AUTH_ORDER`). `AuthWebConfig.PUBLIC_PATHS`에 공개 조회 3개와 `/admin/**`를 더했다.
+10. **R-20 캐시**: 규칙을 30초 메모리에 두고(`ForceUpdateRules`, `Clock` 기준) 같은 서버의 관리자 쓰기가 커밋되면 바로 비운다.
+11. **공지 이미지 25MP 초과는 413 `IMAGE_TOO_LARGE`**(디코드 폭탄 방어, 프로필 사진과 같은 기준. 문서에 없는 방어 장치). 저장소는 `ProfileImageStorage`를 그대로 쓰고(이름은 그대로 둠) 키 규칙은 `NoticeImageKeys`. S3 `put`은 키 확장자로 `Content-Type`을 정한다.
+12. **정리 작업은 이미 `profile/`만 본다**(`CleanupJob`이 `ProfileImageKeys.PREFIX`로 `list`). 코드 변경 없이 테스트만 더했다.
+
 ## 다음 단계용 메모
 
--
+- 만든 것: `appops/{api,application,domain}`, `V4__app_notices_update_rules_device_info.sql`, `storage/NoticeImageInspector.kt`·`NoticeImageKeys`(`ProfileImageStorage.kt` 안), `user/api/ValidAppBuild.kt`·`DeviceInfo`(`DeviceService.kt` 안).
+- 핵심 클래스: `AppOpsValidator`(본문 검사), `AppNoticeService`·`AppUpdateRuleService`(upsert, 쓰기 신호 없음), `ForceUpdateRules`(맞춤 판단 `matches`, 30초 캐시), `ForceUpdateGuardInterceptor`(R-20)·`AdminKeyInterceptor`(R-19)·`AppOpsWebConfig`(순서), `AppNoticeImageService`.
+- 설정: `duriseo.admin.api-key`(`DURISEO_ADMIN_API_KEY`), `duriseo.public-base-url`(`PUBLIC_BASE_URL`). 테스트 값은 `src/test/resources/application.properties`. 환경변수를 바꾼 컨텍스트 테스트는 `@SpringBootTest(properties=…)` 클래스로 나눴다(`AdminKeyDisabledTest`, `AppNoticeImageNoBaseUrlTest`).
+- 테스트 이름: 진행 기록 범위 표의 `AdminKeyTest.R_19_환경변수가_비면_404`는 컨텍스트가 달라 `AdminKeyDisabledTest`에 있다.
+- **컴파일·테스트를 이 환경에서 못 돌렸다**(Gradle 없음). CI가 첫 컴파일이다. 의심 지점: (1) `AppUpdateRule.buildValues`의 `@JdbcTypeCode(SqlTypes.ARRAY)` + `List<Int>`와 `ddl-auto: validate`, (2) `DeviceService`의 `cast(:x as varchar/integer)`에 null 바인딩, (3) 테스트의 1x1 WebP 고정 바이트(`TINY_WEBP`)와 `imageio-webp:3.12.0` 좌표, (4) `/admin/nothing`처럼 핸들러 없는 경로에서 인터셉터가 도는지(`AdminKeyTest.R_19_키가_틀리면_본문검사보다_먼저_401`), (5) Jackson 3에서 `Map<String, Any?>` 본문의 정수가 `Int/Long/BigInteger`로 오는지.
+- 업로드가 10MB를 넘는 multipart는 파싱이 인터셉터보다 먼저라 키가 틀려도 413이 나올 수 있다(그 밖은 키 검사가 먼저).
 
 ## 리뷰 기록
 

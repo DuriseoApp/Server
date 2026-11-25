@@ -41,6 +41,8 @@ dependencies {
 	implementation("com.drewnoakes:metadata-extractor:2.19.0")
 	// JDK ImageIO가 못 읽는 JPEG(CMYK·일부 색 프로파일)를 읽는다. 진행 기록 단위 7 "결정" 참고
 	implementation("com.twelvemonkeys.imageio:imageio-jpeg:3.12.0")
+	// 공지 이미지의 WebP 디코드 (읽기 전용, BSD). JDK ImageIO는 WebP를 읽지 못한다. 진행 기록 단위 8 "결정" 1
+	implementation("com.twelvemonkeys.imageio:imageio-webp:3.12.0")
 	runtimeOnly("org.postgresql:postgresql")
 	testImplementation("org.springframework.boot:spring-boot-starter-data-jpa-test")
 	testImplementation("org.springframework.boot:spring-boot-starter-flyway-test")
