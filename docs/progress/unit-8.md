@@ -1,6 +1,6 @@
 # 단위 8: 운영 — 공지 팝업·업데이트 규칙·기기 정보
 
-> 브랜치: `feat/8-app-ops` · PR: (링크) · 상태: 진행 중
+> 브랜치: `feat/8-app-ops` · PR: #18 · 상태: PR 완료
 > 기준: PRD v0.22 (FR-APP-01~03, D-176~D-183, NFR-SEC-04, NFR-PRIV-03), API.md 1장 공통 요청 헤더·인증 검사 순서, 2장 R-19·R-20, 3.1 `PUT /me/devices`, 3.7, 4.9, 5장, 6장, 8.1·8.2, ERD 3.1 `devices`·3.4·4.4·DB-21·DB-22
 
 ## 범위
@@ -60,7 +60,7 @@
 - 핵심 클래스: `AppOpsValidator`(본문 검사), `AppNoticeService`·`AppUpdateRuleService`(upsert, 쓰기 신호 없음), `ForceUpdateRules`(맞춤 판단 `matches`, 30초 캐시, 캐시는 불변 `ForceRule` 복사본), `ForceUpdateGuardInterceptor`(R-20)·`AdminKeyFilter`(R-19)·`AppOpsWebConfig`(R-20 인터셉터 등록), `AppNoticeImageService`.
 - 설정: `duriseo.admin.api-key`(`DURISEO_ADMIN_API_KEY`), `duriseo.public-base-url`(`PUBLIC_BASE_URL`). 테스트 값은 `src/test/resources/application.properties`. 환경변수를 바꾼 컨텍스트 테스트는 `@SpringBootTest(properties=…)` 클래스로 나눴다(`AdminKeyDisabledTest`, `AppNoticeImageNoBaseUrlTest`).
 - 테스트 이름: 진행 기록 범위 표의 `AdminKeyTest.R_19_환경변수가_비면_404`는 컨텍스트가 달라 `AdminKeyDisabledTest`에 있다.
-- **컴파일·테스트를 이 환경에서 못 돌렸다**(Gradle 없음). CI가 첫 컴파일이다. 의심 지점: (1) `AppUpdateRule.buildValues`의 `@JdbcTypeCode(SqlTypes.ARRAY)` + `List<Int>`와 `ddl-auto: validate`, (2) `DeviceService`의 `cast(:x as varchar/integer)`에 null 바인딩, (3) 테스트의 1x1 WebP 고정 바이트(`TINY_WEBP`)와 `imageio-webp:3.12.0` 좌표, (5) Jackson 3에서 `Map<String, Any?>` 본문의 정수가 `Int/Long/BigInteger`로 오는지.
+- 컴파일·테스트는 CI로 확인했다(커밋 85d2d6d 초록불, 테스트 962개). 처음 의심한 지점(배열 컬럼, null 바인딩, WebP 고정 바이트, Jackson 정수)은 모두 통과했다.
 - R-19가 필터라서 10MB 초과 multipart도 파싱 전에 키 검사가 먼저다.
 - 오류 응답은 `Content-Type: application/json`을 고정한다(`GlobalExceptionHandler.respond`): `Accept: image/*`만 보내는 이미지 조회도 404 JSON 오류가 나간다.
 - 저장소 인터페이스에 `exists`가 생겼다(기본 구현은 `get`으로 열어 보고 닫기, 로컬·S3는 재정의). 공지 이미지 디코드는 프로필 사진과 같은 동시 처리 한도(`duriseo.image.max-concurrent-processing`)를 쓴다.
@@ -75,3 +75,4 @@
 
 - 알려진 한계(고치지 않음): 같은 `id`로 동시에 첫 PUT을 보내면 한쪽이 PK 위반으로 500이 날 수 있다(관리자 한 명이 curl로 쓰므로 허용). 다시 보내면 된다.
 - 사용자: Parameter Store `/duriseo/secret/ADMIN_API_KEY` 등록 (긴 무작위 문자열). 등록 전에는 관리자 API가 꺼져 있다.
+- 리드: CI에서 고친 것 — 주석 속 `/admin/**`가 Kotlin 중첩 주석으로 열린 컴파일 오류, `AdminAppUpdateRuleApiTest` 기대값, 통합 테스트 MockMvc에 `AdminKeyFilter`를 붙임(`webAppContextSetup`은 서블릿 필터를 자동으로 붙이지 않는다).
