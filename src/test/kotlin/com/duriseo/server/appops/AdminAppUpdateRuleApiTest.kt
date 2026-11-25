@@ -47,7 +47,9 @@ class AdminAppUpdateRuleApiTest : AppOpsTestSupport() {
 			.andExpect(jsonPath("$.build.min").isEmpty())
 			.andExpect(jsonPath("$.build.values[1]").value(4))
 			.andExpect(jsonPath("$.osVersion").isEmpty())
-			.andExpect(jsonPath("$.title").isEmpty())
+			.andExpect(jsonPath("$.title").value("t"))
+			.andExpect(jsonPath("$.body").isEmpty())
+			.andExpect(jsonPath("$.image").isEmpty())
 
 		assertEquals(1, jdbc.queryForObject("select count(*) from app_update_rules", Int::class.java))
 		assertEquals(createdAt, jdbc.queryForObject("select created_at from app_update_rules", java.sql.Timestamp::class.java))
