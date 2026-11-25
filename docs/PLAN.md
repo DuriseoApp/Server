@@ -51,7 +51,7 @@
 - 사용자: Kakao Developers 앱 › 웹훅 › 연결 해제 웹훅에 dev·prod 주소 등록 (`docs/DEPLOY.md` 9장).
 - 사용자: CloudFormation 스택 업데이트(운영 사진 버킷). 먼저 `/duriseo/ami/current`를 만들어 `LatestAmiId`에 넘기고, 변경 세트에서 `Server` 교체가 `False`인지 확인 (`docs/SETUP.md` 3.8). IMDS 노출 대책 결정(3.10), 25MP 사진 메모리 확인(3.9) (단위 7).
 - 사용자: Temurin 21 고친 빌드가 나오면 다시 배포 (`docs/DEPLOY.md` 10장).
-- 정리 검토: 날짜 범위 조회 검사·잘라내기를 `GET /events`·`GET /anniversaries`도 `common/api/DateRangeQuery`로 모은다 (지금 같은 규칙 복사본 3곳, 단위 5 리뷰).
+- 정리 검토: 날짜 범위 조회 검사·잘라내기가 `GET /events`·`GET /anniversaries` 두 곳에 같은 규칙으로 복사돼 있다 (단위 5 리뷰). 공통으로 모을지 검토한다. 메모 쪽 복사본과 `common/api/DateRangeQuery`는 PRD v0.21(D-174)에서 `GET /memos/dated`와 함께 지웠다.
 - 정리 검토: `auth`와 `user` 패키지가 서로 참조한다 (`SocialAuthService`가 `user` 서비스를, `WithdrawalService`가 `SessionService`를 부른다). 방향을 정리할지 검토한다.
 
 ## Docs 후속
