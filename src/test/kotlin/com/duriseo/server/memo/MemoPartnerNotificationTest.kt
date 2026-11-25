@@ -103,7 +103,7 @@ class MemoPartnerNotificationTest : MemoTestSupport() {
 		val couple = newCouple()
 
 		postMemoRaw(couple.a.accessToken, """{"memoDate":"2026-11-03"}""").andExpect(status().isBadRequest)
-		postMemoRaw(couple.a.accessToken, """{"title":"제목","memoDate":"1900-01-01"}""").andExpect(status().isBadRequest)
+		postMemoRaw(couple.a.accessToken, """{"title":"  ","body":" "}""").andExpect(status().isBadRequest)
 
 		assertEquals(0, memoCount())
 		assertEquals(0, partnerCreatedCount())
@@ -116,7 +116,7 @@ class MemoPartnerNotificationTest : MemoTestSupport() {
 		val id = createMemo(couple.a.accessToken, """{"title":"처음"}""")
 		val notifications = count("select count(*) from notifications")
 
-		patchMemo(couple.a.accessToken, id, """{"title":"수정","body":"본문","memoDate":"2026-11-03"}""").andExpect(status().isOk)
+		patchMemo(couple.a.accessToken, id, """{"title":"수정","body":"본문"}""").andExpect(status().isOk)
 		deleteMemo(couple.a.accessToken, id).andExpect(status().isNoContent)
 
 		assertEquals(notifications, count("select count(*) from notifications"))

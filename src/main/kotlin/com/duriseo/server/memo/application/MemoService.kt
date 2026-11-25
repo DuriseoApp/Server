@@ -62,7 +62,7 @@ class MemoService(
 				val draft = MemoWriteRules.parseCreate(body)
 
 				val now = clock.nowInSeconds()
-				val memo = memoRepository.save(Memo(spaceId, requesterId, draft.title, draft.body, draft.memoDate, now))
+				val memo = memoRepository.save(Memo(spaceId, requesterId, draft.title, draft.body, now))
 				val notified = if (draft.notifyPartner && partnerId != null) {
 					notifyOf(requesterId, partnerId) { nickname ->
 						notifications.createPartnerMemoCreated(partnerId, nickname, memo.title, memo.body, spaceId, memo.requireId(), now)
@@ -87,11 +87,9 @@ class MemoService(
 		val patch = MemoWriteRules.parsePatch(body, memo.title, memo.body)
 		val titleChanged = patch.title != null && patch.title.value != memo.title
 		val bodyChanged = patch.body != null && patch.body.value != memo.body
-		val dateChanged = patch.memoDate != null && patch.memoDate.value != memo.memoDate
-		if (titleChanged || bodyChanged || dateChanged) {
+		if (titleChanged || bodyChanged) {
 			if (titleChanged) memo.title = checkNotNull(patch.title).value
 			if (bodyChanged) memo.body = checkNotNull(patch.body).value
-			if (dateChanged) memo.memoDate = checkNotNull(patch.memoDate).value
 			memo.updatedAt = clock.nowInSeconds()
 			events.publishEvent(MemoUpdated(memo.spaceId, memoId, requesterId))
 		}

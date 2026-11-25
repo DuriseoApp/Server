@@ -2,7 +2,6 @@ package com.duriseo.server.memo.application
 
 import com.duriseo.server.memo.domain.Memo
 import java.time.Instant
-import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 import java.util.UUID
 
@@ -11,7 +10,6 @@ data class MemoView(
 	val id: UUID,
 	val title: String?,
 	val body: String?,
-	val memoDate: LocalDate?,
 	val authorId: UUID,
 	val isPinned: Boolean,
 	val pinnedAt: Instant?,
@@ -24,7 +22,6 @@ data class MemoView(
 			id = memo.requireId(),
 			title = memo.title,
 			body = memo.body,
-			memoDate = memo.memoDate,
 			authorId = memo.authorId,
 			isPinned = memo.pinnedAt != null,
 			pinnedAt = memo.pinnedAt?.truncatedTo(ChronoUnit.SECONDS),

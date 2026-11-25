@@ -23,7 +23,7 @@ import java.util.UUID
 /**
  * 메모 API (API.md 3.4). 권한 검사(R-01·R-03·R-04·R-06)는 서비스가 `SpaceAccessPolicy`로 한다.
  * 쓰기 본문은 "필드 없음"과 `null`을 구분하고 R-01·R-03(404·403)이 값 검사(400)보다 먼저 나가야 해서 `Map`으로 받고 필수로 두지 않는다.
- * 쿼리(`view`·`cursor`·`size`·`from`·`to`)의 검사도 서비스가 한다: 없거나 틀려도 서비스가 400 `VALIDATION_FAILED`를 만들어야 해서 문자열 선택으로 받는다.
+ * 쿼리(`view`·`cursor`·`size`)의 검사도 서비스가 한다: 없거나 틀려도 서비스가 400 `VALIDATION_FAILED`를 만들어야 해서 문자열 선택으로 받는다.
  */
 @RestController
 class MemoController(
@@ -44,15 +44,6 @@ class MemoController(
 	@GetMapping("/memos/pinned")
 	fun pinned(@CurrentUser requester: AuthenticatedUser): ListResponse<MemoResponse> =
 		ListResponse(queryService.pinned(requester.userId).map { MemoResponse.from(it) })
-
-	/** 캘린더용 날짜 범위의 메모 (FR-CAL-01 AC2) */
-	@GetMapping("/memos/dated")
-	fun dated(
-		@CurrentUser requester: AuthenticatedUser,
-		@RequestParam("from", required = false) from: String?,
-		@RequestParam("to", required = false) to: String?,
-	): ListResponse<MemoResponse> =
-		ListResponse(queryService.dated(requester.userId, from, to).map { MemoResponse.from(it) })
 
 	/** 메모 만들기 (FR-MEMO-02). 201과 `Memo` */
 	@PostMapping("/memos")

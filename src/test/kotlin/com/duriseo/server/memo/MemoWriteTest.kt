@@ -53,7 +53,6 @@ class MemoWriteTest : MemoTestSupport() {
 			.andExpect(status().isCreated)
 			.andExpect(jsonPath("$.title").value("혼자 쓰는 메모"))
 			.andExpect(jsonPath("$.body").value(null as String?))
-			.andExpect(jsonPath("$.memoDate").value(null as String?))
 			.andExpect(jsonPath("$.authorId").value(me.userId.toString()))
 			.andExpect(jsonPath("$.isPinned").value(false))
 			.andExpect(jsonPath("$.pinnedAt").value(null as String?))
@@ -142,10 +141,10 @@ class MemoWriteTest : MemoTestSupport() {
 	fun `FR-MEMO-02 AC2 필드 타입이 틀리면 INVALID이고 notifyPartner null은 REQUIRED다`() {
 		val me = startMember()
 
-		val types = postMemoRaw(me.accessToken, """{"title":123,"body":true,"memoDate":20261103,"notifyPartner":"yes"}""")
+		val types = postMemoRaw(me.accessToken, """{"title":123,"body":true,"notifyPartner":"yes"}""")
 			.andExpect(status().isBadRequest)
 		assertEquals(
-			listOf("title" to "INVALID", "body" to "INVALID", "memoDate" to "INVALID", "notifyPartner" to "INVALID"),
+			listOf("title" to "INVALID", "body" to "INVALID", "notifyPartner" to "INVALID"),
 			fieldsOf(types),
 		)
 		val nullNotify = postMemoRaw(me.accessToken, """{"title":"제목","notifyPartner":null}""").andExpect(status().isBadRequest)
@@ -160,57 +159,61 @@ class MemoWriteTest : MemoTestSupport() {
 	fun `FR-MEMO-02 AC2 body가 null이면 생략과 같다`() {
 		val me = startMember()
 
-		val id = createMemo(me.accessToken, """{"title":"제목","body":null,"memoDate":null}""")
+		val id = createMemo(me.accessToken, """{"title":"제목","body":null}""")
 
 		assertNull(memoRow(id)["body"])
-		assertNull(memoRow(id)["memo_date"])
 	}
 
-	// ── FR-MEMO-02 AC3 ───────────────────────────────────
+	// ── D-174 (메모 날짜 삭제) ─────────────────────────────
 
 	@Test
-	fun `FR-MEMO-02 AC3 memoDate를 생략하면 null이고 YYYY-MM-DD가 아니면 400 (memoDate INVALID)`() {
+	fun `FR-MEMO-02 D-174 POST memos에 memoDate가 와도 무시하고 저장하며 형식이 틀려도 오류가 없다`() {
 		val me = startMember()
 
-		val omitted = createMemo(me.accessToken, """{"title":"날짜 없음"}""")
-		val dated = createMemo(me.accessToken, """{"title":"날짜 있음","memoDate":"2026-11-03"}""")
-
-		assertNull(memoRow(omitted)["memo_date"])
-		assertEquals("2026-11-03", memoRow(dated)["memo_date"])
-		listOf("2026-11-3", "2026/11/03", "2026-02-30", "20261103", "2026-11-03T00:00:00Z", "").forEach { bad ->
-			val result = postMemoRaw(me.accessToken, """{"title":"제목","memoDate":"$bad"}""").andExpect(status().isBadRequest)
-				.andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
-			assertEquals(listOf("memoDate" to "INVALID"), fieldsOf(result), bad)
+		val ids = listOf("2026-11-03", "1900-01-01", "내일", 20261103, null).map { date ->
+			val value = when (date) { null -> "null"; is Int -> "$date"; else -> "\"$date\"" }
+			createMemo(me.accessToken, """{"title":"날짜 무시","memoDate":$value}""")
 		}
-		assertEquals(2, memoCount())
+
+		assertEquals(5, memoCount())
+		ids.forEach { assertEquals("날짜 무시", memoRow(it)["title"]) }
+	}
+
+	@Test
+	fun `FR-MEMO-02 D-174 응답과 DB에 memoDate가 없다`() {
+		val me = startMember()
+
+		val id = createMemo(me.accessToken, """{"title":"제목","memoDate":"2026-11-03"}""")
+
+		postMemoRaw(me.accessToken, """{"title":"제목","memoDate":"2026-11-03"}""").andExpect(status().isCreated)
+			.andExpect(jsonPath("$.memoDate").doesNotExist())
+		getMemo(me.accessToken, id).andExpect(status().isOk).andExpect(jsonPath("$.memoDate").doesNotExist())
+		assertEquals(0, count("select count(*) from information_schema.columns where table_name = 'memos' and column_name = 'memo_date'"))
 	}
 
 	// ── FR-MEMO-03 AC1 ───────────────────────────────────
 
 	@Test
-	fun `FR-MEMO-03 AC1 작성자는 PATCH로 제목 본문 memoDate를 바꾸고 null로 지울 수 있다`() {
+	fun `FR-MEMO-03 AC1 작성자는 PATCH로 제목 본문을 바꾸고 null로 지울 수 있다`() {
 		val couple = newCouple()
-		val id = createMemo(couple.a.accessToken, """{"title":"처음","body":"본문","memoDate":"2026-11-03"}""")
+		val id = createMemo(couple.a.accessToken, """{"title":"처음","body":"본문"}""")
 		val notificationsBefore = count("select count(*) from notifications")
 		clock.advance(Duration.ofMinutes(5))
 
-		patchMemo(couple.a.accessToken, id, """{"title":"  바꿈  ","body":" 새 본문\n","memoDate":"2026-11-04"}""")
+		patchMemo(couple.a.accessToken, id, """{"title":"  바꿈  ","body":" 새 본문\n"}""")
 			.andExpect(status().isOk)
 			.andExpect(jsonPath("$.id").value(id.toString()))
 			.andExpect(jsonPath("$.title").value("바꿈"))
 			.andExpect(jsonPath("$.body").value(" 새 본문\n"))
-			.andExpect(jsonPath("$.memoDate").value("2026-11-04"))
 			.andExpect(jsonPath("$.createdAt").value("2026-10-26T00:00:00Z"))
 			.andExpect(jsonPath("$.updatedAt").value("2026-10-26T00:05:00Z"))
 		// 생략한 필드는 그대로
 		patchMemo(couple.a.accessToken, id, """{"title":"또 바꿈"}""").andExpect(status().isOk)
 			.andExpect(jsonPath("$.body").value(" 새 본문\n"))
-			.andExpect(jsonPath("$.memoDate").value("2026-11-04"))
 		// null은 지운다
-		patchMemo(couple.a.accessToken, id, """{"title":null,"memoDate":null}""").andExpect(status().isOk)
+		patchMemo(couple.a.accessToken, id, """{"title":null}""").andExpect(status().isOk)
 			.andExpect(jsonPath("$.title").value(null as String?))
 			.andExpect(jsonPath("$.body").value(" 새 본문\n"))
-			.andExpect(jsonPath("$.memoDate").value(null as String?))
 		// 공백뿐인 본문은 지우는 것이다
 		patchMemo(couple.a.accessToken, id, """{"title":"제목 복구","body":"   "}""").andExpect(status().isOk)
 			.andExpect(jsonPath("$.body").value(null as String?))
@@ -248,10 +251,10 @@ class MemoWriteTest : MemoTestSupport() {
 		val id = createMemo(me.accessToken, """{"title":"제목","body":"본문"}""")
 		val before = memoSnapshot()
 
-		val result = patchMemo(me.accessToken, id, """{"title":"${"가".repeat(51)}","body":5,"memoDate":"내일"}""")
+		val result = patchMemo(me.accessToken, id, """{"title":"${"가".repeat(51)}","body":5}""")
 			.andExpect(status().isBadRequest)
 
-		assertEquals(listOf("title" to "TOO_LONG", "body" to "INVALID", "memoDate" to "INVALID"), fieldsOf(result))
+		assertEquals(listOf("title" to "TOO_LONG", "body" to "INVALID"), fieldsOf(result))
 		assertEquals(before, memoSnapshot())
 	}
 
@@ -286,14 +289,13 @@ class MemoWriteTest : MemoTestSupport() {
 	@Test
 	fun `FR-MEMO-03 AC1 GET memos id는 요청자 기준 isFavorite을 준다`() {
 		val couple = newCouple()
-		val id = createMemo(couple.a.accessToken, """{"title":"제목","body":"본문","memoDate":"2026-11-03"}""")
+		val id = createMemo(couple.a.accessToken, """{"title":"제목","body":"본문"}""")
 		putFavorite(couple.a.accessToken, id).andExpect(status().isNoContent)
 
 		getMemo(couple.a.accessToken, id).andExpect(status().isOk)
 			.andExpect(jsonPath("$.id").value(id.toString()))
 			.andExpect(jsonPath("$.title").value("제목"))
 			.andExpect(jsonPath("$.body").value("본문"))
-			.andExpect(jsonPath("$.memoDate").value("2026-11-03"))
 			.andExpect(jsonPath("$.authorId").value(couple.a.userId.toString()))
 			.andExpect(jsonPath("$.isPinned").value(false))
 			.andExpect(jsonPath("$.isFavorite").value(true))
@@ -316,11 +318,11 @@ class MemoWriteTest : MemoTestSupport() {
 	@Test
 	fun `FR-MEMO-03 AC4 저장값과 같은 값만 보내면 updated_at이 그대로이고 MemoUpdated가 없다`() {
 		val me = startMember()
-		val id = createMemo(me.accessToken, """{"title":"제목","body":" 본문 ","memoDate":"2026-11-03"}""")
+		val id = createMemo(me.accessToken, """{"title":"제목","body":" 본문 "}""")
 		val updatedAt = memoRow(id)["updated_at"]
 		clock.advance(Duration.ofMinutes(10))
 
-		// 빈 본문, 같은 값(제목은 trim 뒤 같음), null 아닌 날짜가 같음
+		// 빈 본문, 같은 값(제목은 trim 뒤 같음), 무시되는 memoDate만 보냄 (D-174)
 		listOf(
 			"""{}""",
 			"""{"title":"  제목  ","body":" 본문 ","memoDate":"2026-11-03"}""",
@@ -336,7 +338,7 @@ class MemoWriteTest : MemoTestSupport() {
 		assertEquals(updatedAt, memoRow(id)["updated_at"])
 		assertEquals(0, memoChanges.updated.size)
 		// 하나라도 다르면 변경이다
-		patchMemo(me.accessToken, id, """{"title":"제목","body":" 본문 ","memoDate":"2026-11-04"}""").andExpect(status().isOk)
+		patchMemo(me.accessToken, id, """{"title":"제목","body":" 본문2 "}""").andExpect(status().isOk)
 			.andExpect(jsonPath("$.updatedAt").value("2026-10-26T00:10:00Z"))
 		assertNotEquals(updatedAt, memoRow(id)["updated_at"])
 		assertEquals(1, memoChanges.updated.size)
@@ -348,7 +350,7 @@ class MemoWriteTest : MemoTestSupport() {
 		val id = createMemo(me.accessToken, """{"title":"제목"}""")
 		clock.advance(Duration.ofMinutes(10))
 
-		patchMemo(me.accessToken, id, """{"body":null,"memoDate":null}""").andExpect(status().isOk)
+		patchMemo(me.accessToken, id, """{"body":null}""").andExpect(status().isOk)
 
 		assertEquals(0, memoChanges.updated.size)
 	}

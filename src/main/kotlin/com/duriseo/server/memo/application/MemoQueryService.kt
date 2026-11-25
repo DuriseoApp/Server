@@ -2,7 +2,6 @@ package com.duriseo.server.memo.application
 
 import com.duriseo.server.common.access.SpaceAccessPolicy
 import com.duriseo.server.common.api.ApiException
-import com.duriseo.server.common.api.DateRangeQuery
 import com.duriseo.server.common.api.ErrorCode
 import com.duriseo.server.memo.domain.Memo
 import com.duriseo.server.memo.domain.MemoFavoriteRepository
@@ -67,19 +66,6 @@ class MemoQueryService(
 	/** `GET /memos/pinned` (FR-MEMO-05 AC2·AC3): 고정 메모 전체를 `pinned_at` 내림차순 → `id` 내림차순으로. 페이지 없음 */
 	@Transactional(readOnly = true)
 	fun pinned(requesterId: UUID): List<MemoView> = viewsOf(requesterId, memoRepository.findPinned(activeSpaceId(requesterId)))
-
-	/**
-	 * `GET /memos/dated?from=&to=` (캘린더용, FR-CAL-01 AC2·AC6, R-01, R-15). 범위에 `memo_date`가 있는 메모를 고정 여부와 관계없이
-	 * `memo_date` 오름차순 → `created_at` 내림차순 → `id` 내림차순으로. 검사(필수·형식·순서·3개월)는 요청받은 값 그대로 먼저 하고,
-	 * 그 뒤 1950-01-01 ~ 2050-12-31로 잘라낸다. 잘라낸 구간이 비면 빈 목록이다.
-	 */
-	@Transactional(readOnly = true)
-	fun dated(requesterId: UUID, rawFrom: String?, rawTo: String?): List<MemoView> {
-		val range = DateRangeQuery.parseAndClamp(rawFrom, rawTo, MemoWriteRules.MIN_DATE, MemoWriteRules.MAX_DATE)
-		val spaceId = activeSpaceId(requesterId)
-		if (range == null) return emptyList()
-		return viewsOf(requesterId, memoRepository.findDated(spaceId, range.first, range.second))
-	}
 
 	/** `GET /memos/{id}` (FR-MEMO-03, R-01, R-06). 다른 공간·없는 메모는 같은 404 `NOT_FOUND` */
 	@Transactional(readOnly = true)
