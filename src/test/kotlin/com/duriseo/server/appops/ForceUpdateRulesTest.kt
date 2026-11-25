@@ -1,12 +1,10 @@
 package com.duriseo.server.appops
 
+import com.duriseo.server.appops.application.ForceRule
 import com.duriseo.server.appops.application.ForceUpdateRules
 import com.duriseo.server.appops.domain.AppPlatform
-import com.duriseo.server.appops.domain.AppUpdateRule
 import com.duriseo.server.appops.domain.BuildOp
-import com.duriseo.server.appops.domain.UpdateMode
 import org.junit.jupiter.api.Test
-import java.time.Instant
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -22,16 +20,9 @@ class ForceUpdateRulesTest {
 		osMin: Int? = null,
 		osMax: Int? = null,
 		platform: AppPlatform = AppPlatform.ANDROID,
-	) = AppUpdateRule("r", UpdateMode.FORCE, platform, op, Instant.EPOCH).also {
-		it.buildValue = value
-		it.buildMin = min
-		it.buildMax = max
-		it.buildValues = values
-		it.osMin = osMin
-		it.osMax = osMax
-	}
+	) = ForceRule("r", platform, op, value, min, max, values, osMin, osMax, null, null, null, null)
 
-	private fun matches(rule: AppUpdateRule, build: Int, os: Int? = 34, platform: AppPlatform = AppPlatform.ANDROID) =
+	private fun matches(rule: ForceRule, build: Int, os: Int? = 34, platform: AppPlatform = AppPlatform.ANDROID) =
 		ForceUpdateRules.matches(rule, platform, build, os)
 
 	@Test

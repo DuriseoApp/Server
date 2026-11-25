@@ -100,7 +100,8 @@ object AppOpsValidator {
 			value = r.int(build["value"], "build.value")
 			min = r.int(build["min"], "build.min")
 			max = r.int(build["max"], "build.max")
-			values = readValues(r, build["values"])
+			// op가 IN일 때만 values를 읽는다. 다른 op에 values가 있으면 아래 checkUse가 INVALID로 막는다
+			values = if (buildOp == BuildOp.IN) readValues(r, build["values"]) else null
 			if (buildOp != null) {
 				val usesValue = buildOp == BuildOp.EQ || buildOp == BuildOp.LTE || buildOp == BuildOp.GTE
 				val usesRange = buildOp == BuildOp.RANGE

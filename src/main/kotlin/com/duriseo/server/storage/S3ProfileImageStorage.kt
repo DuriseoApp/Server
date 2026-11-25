@@ -5,9 +5,11 @@ import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest
 import software.amazon.awssdk.services.s3.model.GetObjectRequest
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException
 import software.amazon.awssdk.services.s3.model.PutObjectRequest
+import software.amazon.awssdk.services.s3.model.S3Exception
 import java.io.InputStream
 
 /**
@@ -29,6 +31,17 @@ class S3ProfileImageStorage(private val s3: S3Client, private val bucket: String
 			s3.getObject(GetObjectRequest.builder().bucket(bucket).key(key).build())
 		} catch (e: NoSuchKeyException) {
 			null
+		}
+
+	override fun exists(key: String): Boolean =
+		try {
+			s3.headObject(HeadObjectRequest.builder().bucket(bucket).key(key).build())
+			true
+		} catch (e: NoSuchKeyException) {
+			false
+		} catch (e: S3Exception) {
+			// HEAD는 본문이 없어 없는 키가 NoSuchKey 대신 일반 404로 올 수 있다
+			if (e.statusCode() == 404) false else throw e
 		}
 
 	override fun delete(key: String) {

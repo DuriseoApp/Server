@@ -2,9 +2,11 @@ package com.duriseo.server.storage
 
 import com.duriseo.server.common.api.ApiException
 import com.duriseo.server.common.api.ErrorCode
+import com.duriseo.server.config.DuriseoProperties
 import org.springframework.stereotype.Component
 import java.io.ByteArrayInputStream
 import java.io.IOException
+import java.util.concurrent.Semaphore
 import javax.imageio.ImageIO
 import javax.imageio.ImageReader
 
@@ -14,7 +16,10 @@ import javax.imageio.ImageReader
  * 형식은 `Content-Type`·확장자가 아니라 실제 디코더로 정한다. PNG·JPEG·WebP가 아니거나 디코드에 실패하면 415 `IMAGE_TYPE_NOT_ALLOWED`다.
  */
 @Component
-class NoticeImageInspector {
+class NoticeImageInspector(properties: DuriseoProperties) {
+
+	// 프로필 사진과 같은 동시 처리 한도(메모리). 디코드는 1MB 이하라도 픽셀 수만큼 메모리를 쓴다
+	private val permits = Semaphore(maxOf(1, properties.image.maxConcurrentProcessing), true)
 
 	init {
 		// WebP(TwelveMonkeys) 플러그인을 실행 jar에서도 찾게 한다
@@ -24,6 +29,15 @@ class NoticeImageInspector {
 	/** [bytes]의 형식에 맞는 확장자(`png`·`jpg`·`webp`)를 돌려준다 */
 	fun inspect(bytes: ByteArray): String {
 		if (bytes.isEmpty()) throw notAllowed("image is empty")
+		permits.acquire()
+		try {
+			return inspectLocked(bytes)
+		} finally {
+			permits.release()
+		}
+	}
+
+	private fun inspectLocked(bytes: ByteArray): String {
 		val input = ImageIO.createImageInputStream(ByteArrayInputStream(bytes)) ?: throw notAllowed("not a PNG, JPEG or WebP image")
 		input.use {
 			val readers = ImageIO.getImageReaders(input)

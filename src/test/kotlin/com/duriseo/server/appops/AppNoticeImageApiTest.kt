@@ -157,6 +157,16 @@ class AppNoticeImageApiTest : AppOpsTestSupport() {
 	}
 
 	@Test
+	fun `D_181_Accept가_image만이어도_없는_이미지는_404_JSON_오류`() {
+		val result = mockMvc.perform(get("$API/app-notice-images/${UUID.randomUUID()}.png").accept("image/*"))
+			.andExpect(status().isNotFound)
+			.andExpect(header().string("Content-Type", org.hamcrest.Matchers.startsWith("application/json")))
+			.andExpect(jsonPath("$.code").value("NOT_FOUND"))
+		assertNotNull(bodyOf(result))
+		mockMvc.perform(get("$API/app-notice-images/bad-name").accept("image/png")).andExpect(status().isNotFound)
+	}
+
+	@Test
 	fun `D_181_삭제는_204이고_없으면_404`() {
 		val fileName = fileNameOf(upload(TestImages.png(TestImages.solid(10, 10))).andExpect(status().isCreated))
 		// 이 이미지를 쓰는 팝업이 있어도 막지 않는다

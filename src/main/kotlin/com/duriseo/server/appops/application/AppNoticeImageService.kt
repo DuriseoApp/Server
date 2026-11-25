@@ -2,6 +2,7 @@ package com.duriseo.server.appops.application
 
 import com.duriseo.server.common.api.ApiException
 import com.duriseo.server.common.api.ErrorCode
+import com.duriseo.server.common.web.WebConfig
 import com.duriseo.server.config.DuriseoProperties
 import com.duriseo.server.storage.NoticeImageInspector
 import com.duriseo.server.storage.NoticeImageKeys
@@ -45,7 +46,7 @@ class AppNoticeImageService(
 		if (baseUrl.isEmpty()) throw ApiException(ErrorCode.INTERNAL_ERROR, "PUBLIC_BASE_URL is not set")
 		val fileName = NoticeImageKeys.fileName(UUID.randomUUID(), extension)
 		storage.put(NoticeImageKeys.objectKey(fileName), bytes)
-		return "$baseUrl/api/v1/app-notice-images/$fileName"
+		return "$baseUrl${WebConfig.API_PREFIX}/app-notice-images/$fileName"
 	}
 
 	/** `GET /app-notice-images/{fileName}`: 형식이 틀리면 저장소를 찾지 않고 404, 없어도 404 */
@@ -60,7 +61,7 @@ class AppNoticeImageService(
 	fun delete(fileName: String) {
 		if (!NoticeImageKeys.isValidFileName(fileName)) throw ApiException(ErrorCode.NOT_FOUND)
 		val key = NoticeImageKeys.objectKey(fileName)
-		(storage.get(key) ?: throw ApiException(ErrorCode.NOT_FOUND)).close()
+		if (!storage.exists(key)) throw ApiException(ErrorCode.NOT_FOUND)
 		storage.delete(key)
 	}
 

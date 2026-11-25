@@ -6,13 +6,14 @@ import org.junit.jupiter.api.Test
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
 import org.springframework.http.MediaType
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 
-/** 관리자 키 환경변수가 비어 있을 때 (R-19). 환경변수가 다른 컨텍스트라 `AdminKeyTest`와 클래스를 나눈다 */
-@SpringBootTest(properties = ["duriseo.admin.api-key="])
+/** 관리자 키 환경변수가 비어(공백뿐이어도) 있을 때 (R-19). 환경변수가 다른 컨텍스트라 `AdminKeyTest`와 클래스를 나눈다 */
+@SpringBootTest(properties = ["duriseo.admin.api-key=   "])
 @Import(TestcontainersConfig::class, TestClockConfig::class)
 class AdminKeyDisabledTest : AppOpsTestSupport() {
 
@@ -30,6 +31,8 @@ class AdminKeyDisabledTest : AppOpsTestSupport() {
 		mockMvc.perform(
 			put("$API/admin/app-notices/n-1").header("X-Admin-Key", ADMIN_KEY).contentType(MediaType.APPLICATION_JSON).content(VALID_NOTICE),
 		).andExpect(status().isNotFound)
+		// 메서드가 틀린 요청도 404다
+		mockMvc.perform(delete("$API/admin/app-notices").header("X-Admin-Key", ADMIN_KEY)).andExpect(status().isNotFound)
 		// 공개 조회는 그대로 동작한다
 		mockMvc.perform(get("$API/app-notices")).andExpect(status().isOk)
 	}

@@ -23,8 +23,8 @@ class AuthWebConfig(private val authInterceptor: AuthInterceptor) : WebMvcConfig
 
 	companion object {
 		val PUBLIC_PATHS: List<String> = listOf("/auth/guest", "/auth/social", "/auth/refresh", "/webhooks/kakao/unlink").map { "${WebConfig.API_PREFIX}$it" } +
-			// 공개 조회 3개와 관리자 API(관리자 키로 막는다, R-19). API.md 1장
-			listOf("/app-notices", "/app-update-rules", "/app-notice-images/**", "/admin/**").map { "${WebConfig.API_PREFIX}$it" }
+			// 공개 조회 3개와 관리자 API (API.md 1장)
+			WebConfig.APP_OPS_OPEN_PATHS
 
 		/** 인터셉터 순서: 값이 작을수록 먼저. 강제 업데이트 차단·관리자 키 검사(`AppOpsWebConfig`)가 인증보다 앞선다 */
 		const val AUTH_ORDER = 0

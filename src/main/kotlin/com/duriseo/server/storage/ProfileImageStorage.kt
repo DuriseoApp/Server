@@ -19,6 +19,9 @@ interface ProfileImageStorage {
 	/** [key]의 내용을 스트림으로 연다. 없으면 null. 부른 쪽이 닫는다 */
 	fun get(key: String): InputStream?
 
+	/** [key]의 객체가 있는지. 내용을 읽지 않는다(S3는 HEAD). 기본 구현은 [get]으로 열어 보고 닫는다 */
+	fun exists(key: String): Boolean = get(key)?.use { true } ?: false
+
 	/** [key]를 지운다. 없어도 오류가 아니다 (멱등) */
 	fun delete(key: String)
 
