@@ -14,7 +14,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 /**
- * Flyway V1~V3이 실제 PostgreSQL 16에 적용되고, ERD 3장의 "제약" 열이 DB에서 지켜지는지 확인한다.
+ * Flyway V1~V4가 실제 PostgreSQL 16에 적용되고, ERD 3장의 "제약" 열이 DB에서 지켜지는지 확인한다.
  * "서비스"로 표시된 규칙은 여기서 보지 않는다 (각 작업 단위의 서비스 테스트가 본다).
  */
 @SpringBootTest
@@ -30,12 +30,12 @@ class SchemaMigrationTest {
 	}
 
 	@Test
-	fun `V3까지 적용되어 ERD의 15개 테이블이 있다`() {
+	fun `V4까지 적용되어 ERD의 17개 테이블이 있다`() {
 		val version = jdbc.queryForObject(
 			"select max(version) from flyway_schema_history where success",
 			String::class.java,
 		)
-		assertEquals("3", version)
+		assertEquals("4", version)
 
 		val tables = jdbc.queryForList(
 			"""
@@ -149,6 +149,23 @@ class SchemaMigrationTest {
 	}
 
 	@Test
+	fun `DB-21 업데이트 규칙의 mode와 build_op는 정해진 값만 받는다`() {
+		val insert = "insert into app_update_rules (id, mode, platform, build_op, build_value) values (?, ?, 'ANDROID', ?, 1)"
+		jdbc.update(insert, "rule-ok", "FORCE", "LTE")
+		assertViolates("ck_app_update_rules_mode") { jdbc.update(insert, "rule-1", "BLOCK", "LTE") }
+		assertViolates("ck_app_update_rules_build_op") { jdbc.update(insert, "rule-2", "FORCE", "NE") }
+	}
+
+	@Test
+	fun `DB-22 devices의 기기 정보 컬럼은 null을 받는다`() {
+		val user = user()
+		jdbc.update("insert into devices (id, user_id, fcm_token) values (?, ?, 'fake-token')", uuid(), user)
+		val row = jdbc.queryForMap("select os_version, app_version, app_build from devices")
+		assertEquals(null, row["os_version"])
+		assertEquals(null, row["app_build"])
+	}
+
+	@Test
 	fun `콘텐츠 작성자는 지울 수 없고 계정 행은 사용자와 함께 지워진다`() {
 		val author = user()
 		val space = space("PERSONAL")
@@ -234,6 +251,7 @@ class SchemaMigrationTest {
 			"users", "social_accounts", "auth_sessions", "devices", "notification_settings", "notifications",
 			"spaces", "space_members", "invite_codes", "invite_code_attempts",
 			"events", "event_reminders", "anniversaries", "memos", "memo_favorites",
+			"app_notices", "app_update_rules",
 		)
 	}
 }
