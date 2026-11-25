@@ -8,7 +8,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer
 
 /**
  * 인터셉터 순서 (API.md 1장 검사 순서): 강제 업데이트 차단(R-20) → 인증(`AuthWebConfig`).
- * 관리자 키 검사(R-19)는 `/admin/**`만 맡고 R-20과 인증을 받지 않는다.
+ * 관리자 키 검사(R-19)는 `/admin/` 아래 경로만 맡고 R-20과 인증을 받지 않는다.
  */
 @Configuration(proxyBeanMethods = false)
 class AppOpsWebConfig(

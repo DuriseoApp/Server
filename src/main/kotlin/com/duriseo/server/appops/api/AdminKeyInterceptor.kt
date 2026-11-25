@@ -11,7 +11,7 @@ import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 
 /**
- * 관리자 API(`/admin/**`) 키 검사 (R-19, NFR-SEC-04). 환경변수 `DURISEO_ADMIN_API_KEY`가 비어 있으면 모두 404 `NOT_FOUND`(키가 맞아도 같다),
+ * 관리자 API(`/admin/` 아래 경로) 키 검사 (R-19, NFR-SEC-04). 환경변수 `DURISEO_ADMIN_API_KEY`가 비어 있으면 모두 404 `NOT_FOUND`(키가 맞아도 같다),
  * 헤더 `X-Admin-Key`가 없거나 틀리면 401 `ADMIN_KEY_INVALID`. 비교는 상수 시간이다.
  * 요청 본문을 읽기 전에(인터셉터에서) 검사하므로 키가 틀린 요청에는 경로·필드 정보를 알려 주지 않는다. 키는 로그·응답에 쓰지 않는다.
  * 컨트롤러 메서드가 없는 경로도 같은 순서로 막는다(키가 틀리면 401).

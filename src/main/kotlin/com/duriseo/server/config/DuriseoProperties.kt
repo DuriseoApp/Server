@@ -19,7 +19,7 @@ data class DuriseoProperties(
 	/** 공지 이미지 업로드 응답 `url`의 앞부분 (예 `https://<API 도메인>`, 끝에 `/` 없음, API.md 8.2). 비면 서버는 뜨고 업로드만 500이다 */
 	val publicBaseUrl: String = "",
 ) {
-	/** 관리자 API 키 (R-19, NFR-SEC-04). 비어 있으면 `/admin/**`가 꺼진다(404). 로그에 찍히지 않도록 toString에서 가린다 */
+	/** 관리자 API 키 (R-19, NFR-SEC-04). 비어 있으면 `/admin/` 아래 경로가 꺼진다(404). 로그에 찍히지 않도록 toString에서 가린다 */
 	data class Admin(val apiKey: String = "") {
 		override fun toString(): String = "Admin(apiKey=***)"
 	}

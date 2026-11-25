@@ -14,7 +14,7 @@ import org.springframework.web.servlet.HandlerInterceptor
 /**
  * 강제 업데이트 차단 (R-20, D-180, FR-APP-02.AC6). `/api/v1` 아래 요청에서 요청 헤더(1장)가 맞는 `FORCE` 규칙이 있으면
  * 426 `APP_VERSION_UNSUPPORTED`로 거부한다. 인증보다 먼저 도는 인터셉터라 로그인 전 요청과 만료된 토큰의 요청도 막는다.
- * 예외 경로(공개 조회 3개, `/admin/**`)는 `AppOpsWebConfig`가 뺀다.
+ * 예외 경로(공개 조회 3개, `/admin/` 아래 경로)는 `AppOpsWebConfig`가 뺀다.
  * `X-Platform`·`X-App-Build`를 읽을 수 없으면 통과하고, `X-OS-Version`을 읽을 수 없으면 OS 조건이 있는 규칙만 건너뛴다.
  */
 @Component

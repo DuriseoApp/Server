@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RestController
 
 /**
  * 공지 팝업·업데이트 규칙 (API.md 3.7). 공개 조회 2개는 로그인이 필요 없고 R-20 검사 예외다.
- * 관리자 API(`/admin/**`)는 `AdminKeyInterceptor`가 키를 먼저 검사한다 (R-19). 본문은 `Map`으로 받아 서비스가 필드마다 검사한다.
+ * 관리자 API(`/admin/` 아래 경로)는 `AdminKeyInterceptor`가 키를 먼저 검사한다 (R-19). 본문은 `Map`으로 받아 서비스가 필드마다 검사한다.
  */
 @RestController
 class AppNoticeController(
