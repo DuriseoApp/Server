@@ -17,7 +17,7 @@ import kotlin.test.assertTrue
 
 /**
  * `POST`·`PATCH`·`DELETE /memos`와 `GET /memos/{id}`의 값 규칙 (FR-MEMO-02·03, API.md 3.4 "메모 쓰기 규칙", D-132, D-123).
- * 권한(R-01·R-03)은 `MemoPermissionTest`, 날짜 범위(R-15)는 `MemoDateRangeTest`, 알림 행은 `MemoPartnerNotificationTest`가 확인한다.
+ * 권한(R-01·R-03)은 `MemoPermissionTest`, 알림 행은 `MemoPartnerNotificationTest`가 확인한다.
  */
 @SpringBootTest
 @Import(TestcontainersConfig::class, TestClockConfig::class)

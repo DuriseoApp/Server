@@ -19,7 +19,7 @@ import kotlin.test.assertEquals
 
 /**
  * 메모 권한 규칙 R-01·R-03·R-04를 모든 경로에서 확인한다 (NFR-SEC-02, API.md 2장). 규칙마다 허용·거부 테스트를 둔다.
- * R-06은 `MemoFavoriteTest`, R-15는 `MemoDateRangeTest`가 확인한다.
+ * R-06은 `MemoFavoriteTest`가 확인한다. 메모에는 날짜가 없어 R-15가 해당하지 않는다 (D-174).
  */
 @SpringBootTest
 @Import(TestcontainersConfig::class, TestClockConfig::class)
