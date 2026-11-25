@@ -7,7 +7,6 @@ import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import java.time.Instant
-import java.time.LocalDate
 import java.util.UUID
 
 interface MemoRepository : JpaRepository<Memo, UUID> {
@@ -117,12 +116,4 @@ interface MemoRepository : JpaRepository<Memo, UUID> {
 		nativeQuery = true,
 	)
 	fun findPinned(@Param("spaceId") spaceId: UUID): List<Memo>
-
-	/** `GET /memos/dated`: [from]~[to](양 끝 포함)에 `memo_date`가 있는 메모. 고정 여부와 관계없다. `memo_date` 오름차순 → `created_at` 내림차순 → `id` 내림차순 */
-	@Query(
-		"select m.* from memos m where m.space_id = :spaceId and m.memo_date between :from and :to " +
-			"order by m.memo_date asc, m.created_at desc, m.id desc",
-		nativeQuery = true,
-	)
-	fun findDated(@Param("spaceId") spaceId: UUID, @Param("from") from: LocalDate, @Param("to") to: LocalDate): List<Memo>
 }

@@ -245,10 +245,10 @@ class MemoListTest : MemoTestSupport() {
 	// ── FR-MEMO-01 AC3 ───────────────────────────────────
 
 	@Test
-	fun `FR-MEMO-01 AC3 Memo 응답은 id title body memoDate authorId isPinned pinnedAt isFavorite createdAt updatedAt을 null 포함해 준다`() {
+	fun `FR-MEMO-01 AC3 Memo 응답은 id title body authorId isPinned pinnedAt isFavorite createdAt updatedAt을 null 포함해 준다`() {
 		val couple = newCouple()
-		val withAll = insertMemoRow(couple.spaceId, couple.b.userId, "제목", "본문", "2026-11-03", createdAt = t0)
-		val bare = insertMemoRow(couple.spaceId, couple.a.userId, null, "본문만", null, createdAt = t0.plusSeconds(1))
+		val withAll = insertMemoRow(couple.spaceId, couple.b.userId, "제목", "본문", createdAt = t0)
+		val bare = insertMemoRow(couple.spaceId, couple.a.userId, null, "본문만", createdAt = t0.plusSeconds(1))
 		insertMemoFavorite(withAll, couple.a.userId)
 
 		val body = bodyOf(getMemos(couple.a.accessToken).andExpect(status().isOk))
@@ -258,12 +258,11 @@ class MemoListTest : MemoTestSupport() {
 		val bareItem = items[0]
 		assertEquals(bare.toString(), bareItem["id"])
 		assertEquals(
-			setOf("id", "title", "body", "memoDate", "authorId", "isPinned", "pinnedAt", "isFavorite", "createdAt", "updatedAt"),
+			setOf("id", "title", "body", "authorId", "isPinned", "pinnedAt", "isFavorite", "createdAt", "updatedAt"),
 			bareItem.keys,
 		)
 		assertNull(bareItem["title"])
 		assertEquals("본문만", bareItem["body"])
-		assertNull(bareItem["memoDate"])
 		assertEquals(couple.a.userId.toString(), bareItem["authorId"])
 		assertEquals(false, bareItem["isPinned"])
 		assertNull(bareItem["pinnedAt"])
@@ -271,7 +270,6 @@ class MemoListTest : MemoTestSupport() {
 		assertEquals("2026-10-20T00:00:01Z", bareItem["createdAt"])
 		val fullItem = items[1]
 		assertEquals("제목", fullItem["title"])
-		assertEquals("2026-11-03", fullItem["memoDate"])
 		assertEquals(couple.b.userId.toString(), fullItem["authorId"])
 		assertEquals(true, fullItem["isFavorite"])
 		assertEquals("2026-10-20T00:00:00Z", fullItem["updatedAt"])

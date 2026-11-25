@@ -47,13 +47,6 @@ abstract class MemoTestSupport : IntegrationTestSupport() {
 
 	protected fun getPinnedMemos(token: String): ResultActions = mockMvc.perform(auth(get("$API/memos/pinned"), token))
 
-	protected fun getDatedMemos(token: String, from: String?, to: String?): ResultActions {
-		val request = auth(get("$API/memos/dated"), token)
-		if (from != null) request.param("from", from)
-		if (to != null) request.param("to", to)
-		return mockMvc.perform(request)
-	}
-
 	/** `POST /memos` 본문을 그대로 보낸다. [json]이 null이면 본문 없이 보낸다 */
 	protected fun postMemoRaw(token: String, json: String?): ResultActions {
 		val request = auth(post("$API/memos"), token)
@@ -112,7 +105,7 @@ abstract class MemoTestSupport : IntegrationTestSupport() {
 	/** 데이터베이스의 메모 한 행 */
 	protected fun memoRow(id: UUID): Map<String, Any?> =
 		jdbc.queryForMap(
-			"select title, body, memo_date::text as memo_date, author_id, space_id, pinned_at, pinned_by, created_at, updated_at from memos where id = ?",
+			"select title, body, author_id, space_id, pinned_at, pinned_by, created_at, updated_at from memos where id = ?",
 			id,
 		)
 
@@ -125,16 +118,15 @@ abstract class MemoTestSupport : IntegrationTestSupport() {
 		authorId: UUID,
 		title: String? = "테스트 메모",
 		body: String? = null,
-		memoDate: String? = null,
 		createdAt: Instant = clock.instant(),
 		pinnedAt: Instant? = null,
 		pinnedBy: UUID? = null,
 		id: UUID = UUID.randomUUID(),
 	): UUID {
 		jdbc.update(
-			"insert into memos (id, space_id, author_id, title, body, memo_date, pinned_at, pinned_by, created_at, updated_at) " +
-				"values (?, ?, ?, ?, ?, cast(? as date), ?, ?, ?, ?)",
-			id, spaceId, authorId, title, body, memoDate, pinnedAt?.let { ts(it) }, pinnedBy, ts(createdAt), ts(createdAt),
+			"insert into memos (id, space_id, author_id, title, body, pinned_at, pinned_by, created_at, updated_at) " +
+				"values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			id, spaceId, authorId, title, body, pinnedAt?.let { ts(it) }, pinnedBy, ts(createdAt), ts(createdAt),
 		)
 		return id
 	}

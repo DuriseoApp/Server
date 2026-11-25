@@ -258,9 +258,9 @@ class CoupleImportTest : IntegrationTestSupport() {
 	fun `FR-COUPLE-03 AC1 가져오기는 메모와 즐겨찾기 고정 상태를 그대로 옮긴다`() {
 		val couple = pendingCouple()
 		val pinnedAt = Instant.parse("2026-10-20T01:02:03Z")
-		jdbc.update("update memos set pinned_at = ?, pinned_by = ?, memo_date = date '2026-11-03' where id = ?", ts(pinnedAt), couple.b.userId, couple.memoId)
+		jdbc.update("update memos set pinned_at = ?, pinned_by = ? where id = ?", ts(pinnedAt), couple.b.userId, couple.memoId)
 		insertMemoFavorite(couple.memoId, couple.b.userId)
-		val before = jdbc.queryForMap("select title, author_id, created_at, updated_at, pinned_at, pinned_by, memo_date::text as memo_date from memos where id = ?", couple.memoId)
+		val before = jdbc.queryForMap("select title, author_id, created_at, updated_at, pinned_at, pinned_by from memos where id = ?", couple.memoId)
 		// 가져오기 전 대기 공간의 메모 개수가 importCounts.memos에 나온다 (메모 서비스가 센다)
 		getMe(couple.b.accessToken).andExpect(jsonPath("$.space.importCounts.memos").value(1))
 
@@ -268,7 +268,7 @@ class CoupleImportTest : IntegrationTestSupport() {
 
 		assertEquals(couple.coupleSpaceId, spaceOfRecord("memos", couple.memoId))
 		// space_id만 바뀌고 작성자·시각·고정 상태·날짜는 그대로다 (알림 행도 만들지 않는다)
-		assertEquals(before, jdbc.queryForMap("select title, author_id, created_at, updated_at, pinned_at, pinned_by, memo_date::text as memo_date from memos where id = ?", couple.memoId))
+		assertEquals(before, jdbc.queryForMap("select title, author_id, created_at, updated_at, pinned_at, pinned_by from memos where id = ?", couple.memoId))
 		assertEquals(1, count("select count(*) from memo_favorites where memo_id = ? and user_id = ?", couple.memoId, couple.b.userId))
 		assertEquals(0, count("select count(*) from notifications where type in ('PARTNER_CREATED', 'MEMO_PINNED')"))
 		// 커플 공간의 고정 영역에 보이고, 즐겨찾기는 B에게만 보인다

@@ -19,7 +19,7 @@ import kotlin.test.assertEquals
 
 /**
  * 메모 권한 규칙 R-01·R-03·R-04를 모든 경로에서 확인한다 (NFR-SEC-02, API.md 2장). 규칙마다 허용·거부 테스트를 둔다.
- * R-06은 `MemoFavoriteTest`, R-15는 `MemoDateRangeTest`가 확인한다.
+ * R-06은 `MemoFavoriteTest`가 확인한다. 메모에는 날짜가 없어 R-15가 해당하지 않는다 (D-174).
  */
 @SpringBootTest
 @Import(TestcontainersConfig::class, TestClockConfig::class)
@@ -104,13 +104,13 @@ class MemoPermissionTest : MemoTestSupport() {
 	}
 
 	@Test
-	fun `R-01 목록 pinned dated는 다른 공간 메모를 넣지 않는다`() {
+	fun `R-01 목록과 pinned는 다른 공간 메모를 넣지 않는다`() {
 		val couple = newCouple()
 		val other = newCouple()
-		val mine = insertMemoRow(couple.spaceId, couple.a.userId, "내 메모", memoDate = "2026-11-03", createdAt = t0)
-		val minePinned = insertMemoRow(couple.spaceId, couple.a.userId, "내 고정", memoDate = "2026-11-03", pinnedAt = t0, pinnedBy = couple.a.userId)
-		val foreign = insertMemoRow(other.spaceId, other.a.userId, "남의 메모", memoDate = "2026-11-03", createdAt = t0)
-		val foreignPinned = insertMemoRow(other.spaceId, other.a.userId, "남의 고정", memoDate = "2026-11-03", pinnedAt = t0, pinnedBy = other.a.userId)
+		val mine = insertMemoRow(couple.spaceId, couple.a.userId, "내 메모", createdAt = t0)
+		val minePinned = insertMemoRow(couple.spaceId, couple.a.userId, "내 고정", pinnedAt = t0, pinnedBy = couple.a.userId)
+		val foreign = insertMemoRow(other.spaceId, other.a.userId, "남의 메모", createdAt = t0)
+		val foreignPinned = insertMemoRow(other.spaceId, other.a.userId, "남의 고정", pinnedAt = t0, pinnedBy = other.a.userId)
 		insertMemoFavorite(foreign, couple.a.userId)
 
 		listOf("newest", "oldest", "favorites").forEach { view ->
@@ -119,8 +119,6 @@ class MemoPermissionTest : MemoTestSupport() {
 		}
 		getMemos(couple.a.accessToken).andExpect(jsonPath("$.totalCount").value(1)).andExpect(jsonPath("$.favoriteCount").value(0))
 		assertEquals(listOf(minePinned), idsOf(getPinnedMemos(couple.a.accessToken)))
-		assertEquals(setOf(mine, minePinned), idsOf(getDatedMemos(couple.a.accessToken, "2026-11-01", "2026-11-30")).toSet())
-		assertEquals(setOf(foreign, foreignPinned), idsOf(getDatedMemos(other.b.accessToken, "2026-11-01", "2026-11-30")).toSet())
 	}
 
 	@Test
@@ -170,7 +168,6 @@ class MemoPermissionTest : MemoTestSupport() {
 		// 같은 값만 보내는 요청도, 비어 있는 요청도 작성자가 아니면 거부다
 		patchMemo(couple.b.accessToken, id, """{"title":"에이의 메모"}""").andExpect(status().isForbidden)
 		patchMemo(couple.b.accessToken, id, """{}""").andExpect(status().isForbidden)
-		patchMemo(couple.b.accessToken, id, """{"memoDate":"2026-11-03"}""").andExpect(status().isForbidden)
 		deleteMemo(couple.b.accessToken, id).andExpect(status().isForbidden)
 			.andExpect(jsonPath("$.code").value("NOT_AUTHOR"))
 
@@ -180,7 +177,7 @@ class MemoPermissionTest : MemoTestSupport() {
 	}
 
 	@Test
-	fun `FR-MEMO-03 AC1 PATCH 검사 순서는 NOT_FOUND NOT_AUTHOR VALIDATION_FAILED DATE_OUT_OF_RANGE다`() {
+	fun `FR-MEMO-03 AC1 PATCH 검사 순서는 NOT_FOUND NOT_AUTHOR VALIDATION_FAILED다`() {
 		val couple = newCouple()
 		val other = newCouple()
 		val mine = createMemo(couple.a.accessToken, """{"title":"에이의 메모"}""")
@@ -189,17 +186,14 @@ class MemoPermissionTest : MemoTestSupport() {
 		val before = memoSnapshot()
 
 		// 1. R-01: 다른 공간이면 값이 틀려도 404
-		patchMemo(couple.a.accessToken, foreign, """{"title":"$tooLongTitle","memoDate":"1900-01-01"}""").andExpect(status().isNotFound)
+		patchMemo(couple.a.accessToken, foreign, """{"title":"$tooLongTitle"}""").andExpect(status().isNotFound)
 		// 2. R-03: 작성자가 아니면 값이 틀려도 403
-		patchMemo(couple.b.accessToken, mine, """{"title":"$tooLongTitle","memoDate":"1900-01-01"}""").andExpect(status().isForbidden)
+		patchMemo(couple.b.accessToken, mine, """{"title":"$tooLongTitle"}""").andExpect(status().isForbidden)
 			.andExpect(jsonPath("$.code").value("NOT_AUTHOR"))
-		// 3. 값 검사: 값이 틀리면 날짜 범위 밖이어도 VALIDATION_FAILED만
-		val validation = patchMemo(couple.a.accessToken, mine, """{"title":"$tooLongTitle","memoDate":"1900-01-01"}""")
+		// 3. 값 검사
+		val validation = patchMemo(couple.a.accessToken, mine, """{"title":"$tooLongTitle"}""")
 			.andExpect(status().isBadRequest).andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
 		assertEquals(listOf("title" to "TOO_LONG"), fieldsOf(validation))
-		// 4. 날짜 범위
-		patchMemo(couple.a.accessToken, mine, """{"memoDate":"1900-01-01"}""").andExpect(status().isBadRequest)
-			.andExpect(jsonPath("$.code").value("DATE_OUT_OF_RANGE"))
 
 		assertEquals(before, memoSnapshot())
 	}
@@ -238,7 +232,6 @@ class MemoPermissionTest : MemoTestSupport() {
 		listOf(
 			get("$API/memos"),
 			get("$API/memos/pinned"),
-			get("$API/memos/dated?from=2026-11-01&to=2026-11-30"),
 			post("$API/memos"),
 			get("$API/memos/$id"),
 			patch("$API/memos/$id"),
