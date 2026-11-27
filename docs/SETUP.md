@@ -160,6 +160,21 @@ IMDS(`169.254.169.254`)의 hop limit이 2이면 도커 컨테이너(Caddy, Postg
   ```
   주의: 컨테이너 IP는 다시 만들어질 때 바뀔 수 있어 `compose`에서 prod 앱에 고정 IP를 주거나 규칙을 배포 뒤에 다시 적용해야 하고, 재부팅하면 규칙이 사라져 영구 저장(`iptables-services` 등)이 필요해요. 어느 방식으로 할지, 아니면 hop limit을 1로 두고 prod 앱을 호스트 네트워크로 띄울지는 사람이 정해요.
 
+### 3.11 기존 스택에 공지 이미지 권한 더하기 (단위 8, 사람이 해요)
+
+단위 8의 공지 이미지(API.md 8.2)는 프로필 사진과 같은 버킷의 `notice/` 접두어에 저장돼요. 템플릿의 서버 역할(`ServerRole`)에 `notice/*` 읽기·쓰기·삭제 권한이 새로 들어갔으니 스택에 반영해야 해요. **반영 전에는 운영에서 `POST /admin/app-notice-images`가 S3 `AccessDenied`로 500이 나요** (프로필 사진, 공지·업데이트 규칙, dev 서버는 영향이 없어요). **스택 업데이트는 에이전트가 하지 않고 사람이 해요.**
+
+1. 최신 `deploy/aws/duriseo-stack.yml`을 받아요 (3.2의 1번).
+2. 3.8의 2번처럼 AMI를 고정해 둔 파라미터 `/duriseo/ami/current`가 있는지 봐요. 없으면 3.8의 2번대로 만들어요.
+3. CloudFormation › `duriseo` 스택 › 업데이트 › **기존 템플릿 바꾸기** › 템플릿 파일 업로드 › 다음. 파라미터는 `OS image`(`LatestAmiId`)만 **`/duriseo/ami/current`**, 나머지는 **이전 값 사용**이에요.
+4. **변경 세트로 먼저 봐요** (`docs/DEPLOY.md` 5장). 바뀌는 것은 **`ServerRole` 수정 하나뿐**이어야 해요. `Server`(EC2) 행이 보이면 실행하지 말고 멈춰요.
+5. 실행해서 `UPDATE_COMPLETE`가 되면 끝이에요. 앱을 다시 배포할 필요는 없어요 (권한은 바로 적용돼요).
+6. 확인: 관리자 API로 이미지를 하나 올려 봐요 (`$ADMIN_KEY`에는 Parameter Store의 관리자 키를 넣어요). `201`과 `url`이 오고, 그 `url`을 브라우저로 열어 이미지가 보이면 돼요.
+   ```bash
+   curl -sS -X POST "https://<운영 도메인>/admin/app-notice-images" \
+     -H "X-Admin-Key: $ADMIN_KEY" -F "file=@notice.png"
+   ```
+
 ## 4. 공개 레포 주의
 
 이 레포는 공개예요. 커밋에 비밀값이 들어가면 지워도 기록에 남아요. 실수로 올렸으면 바로 그 키를 폐기하고 새로 발급해요.
