@@ -257,14 +257,17 @@ Resources:
                 Effect: Allow
                 Action: s3:ListBucket
                 Resource: !GetAtt BackupBucket.Arn
-              # Prod app profile photos. ListBucket is needed for the daily cleanup and so that a missing key returns 404 instead of 403
+              # Prod app profile photos (profile/) and notice popup images (notice/, API.md 8.2) in the same bucket.
+              # ListBucket is needed for the daily cleanup and so that a missing key returns 404 instead of 403
               - Sid: ProfileImages
                 Effect: Allow
                 Action:
                   - s3:GetObject
                   - s3:PutObject
                   - s3:DeleteObject
-                Resource: !Sub "${ProfileImageBucket.Arn}/profile/*"
+                Resource:
+                  - !Sub "${ProfileImageBucket.Arn}/profile/*"
+                  - !Sub "${ProfileImageBucket.Arn}/notice/*"
               - Sid: ListProfileImages
                 Effect: Allow
                 Action: s3:ListBucket
